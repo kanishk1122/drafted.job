@@ -11,7 +11,7 @@ engine = None
 connected = False
 while not connected:
     try:
-        engine = create_engine(settings.database_url)
+        engine = create_engine(settings.DATABASE_URL)
         with engine.connect() as conn:
             connected = True
             print("📦 Database Connection: ESTABLISHED")

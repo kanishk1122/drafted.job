@@ -1,70 +1,98 @@
 "use client";
 
 import React from "react";
-import { Link2, Globe, Briefcase, Search, ExternalLink, Zap, ShieldCheck, ShieldAlert, ArrowUpRight } from "lucide-react";
+import { ShieldCheck, ArrowUpRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useAppDispatch, useAppSelector, RootState } from "@/lib/redux/store";
+import { fetchProfile, updatePlatformStatus } from "@/lib/redux/slices/profileSlice";
+import { toast } from "sonner";
+
+interface SearchChannel {
+  id: number;
+  name: string;
+  key: string;
+  logo: string;
+  status: string;
+  color: string;
+  url: string;
+}
 
 export const platformTargets = [
   { 
     id: 1, 
     name: "LinkedIn India", 
+    key: "linkedin",
     logo: "https://www.google.com/s2/favicons?domain=linkedin.com&sz=128", 
     status: "Premium Active", 
     color: "blue", 
     url: "https://www.linkedin.com/jobs/", 
-    initiallyConnected: true 
   },
   { 
     id: 2, 
     name: "Naukri.com", 
+    key: "naukri",
     logo: "https://www.google.com/s2/favicons?domain=naukri.com&sz=128", 
     status: "Direct Scan Ready", 
     color: "orange", 
     url: "https://www.naukri.com/", 
-    initiallyConnected: false 
   },
   { 
     id: 3, 
     name: "Indeed India", 
+    key: "indeed",
     logo: "https://www.google.com/s2/favicons?domain=indeed.com&sz=128", 
     status: "High Volume", 
     color: "blue", 
     url: "https://in.indeed.com/", 
-    initiallyConnected: true 
   },
   { 
     id: 4, 
     name: "Foundit (Monster)", 
+    key: "foundit",
     logo: "https://www.google.com/s2/favicons?domain=foundit.in&sz=128", 
     status: "AI Optimized", 
     color: "green", 
     url: "https://www.foundit.in/", 
-    initiallyConnected: false 
   },
   { 
     id: 5, 
     name: "Glassdoor", 
+    key: "glassdoor",
     logo: "https://www.google.com/s2/favicons?domain=glassdoor.com&sz=128", 
     status: "Insights Hub", 
     color: "green", 
     url: "https://www.glassdoor.co.in/", 
-    initiallyConnected: false 
   },
   { 
     id: 6, 
     name: "AmbitionBox", 
+    key: "ambitionbox",
     logo: "https://www.google.com/s2/favicons?domain=ambitionbox.com&sz=128", 
     status: "Review Scan", 
     color: "orange", 
     url: "https://www.ambitionbox.com/", 
-    initiallyConnected: false 
   },
 ];
 
-export function PlatformListItem({ platform }: any) {
-  const [connected, setConnected] = React.useState(platform.initiallyConnected);
-  
+export function PlatformListItem({ platform }: { platform: SearchChannel }) {
+  const dispatch = useAppDispatch();
+  const context = useAppSelector((state: RootState) => state.profile.context);
+  const connected = (context as any)?.[`${platform.key}_active`] || false;
+  const [localLoading, setLocalLoading] = React.useState(false);
+
+  const handleToggle = async (checked: boolean) => {
+    setLocalLoading(true);
+    try {
+      await dispatch(updatePlatformStatus({ platform: platform.key, active: checked })).unwrap();
+      toast.success(`${platform.name} status updated.`);
+    } catch (err: any) {
+      toast.error(`Sync Failed: Platform module unreachable.`);
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
   return (
     <div className={cn(
       "p-4 group transition-all duration-300 flex items-center justify-between",
@@ -72,7 +100,7 @@ export function PlatformListItem({ platform }: any) {
     )}>
        <div className="flex items-center gap-4">
           <div className={cn("h-8 w-8 rounded-lg border border-border/40 overflow-hidden flex items-center justify-center transition-all duration-500 bg-white p-1.5", 
-             connected ? "grayscale-0 ring-1 ring-primary/20" : "grayscale opacity-40")}>
+             connected ? "grayscale-0 ring-1 ring-primary/20 shadow-lg shadow-primary/10" : "grayscale opacity-40")}>
              <img src={platform.logo} alt={platform.name} className="size-full object-contain" />
           </div>
           <div>
@@ -84,7 +112,7 @@ export function PlatformListItem({ platform }: any) {
                 {connected && <ShieldCheck size={10} className="text-primary animate-pulse" />}
              </div>
              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest opacity-60">
-                {connected ? platform.status : "OFFLINE"}
+                {localLoading ? "Connecting..." : (connected ? platform.status : "OFFLINE")}
              </p>
           </div>
        </div>
@@ -96,10 +124,27 @@ export function PlatformListItem({ platform }: any) {
           </a>
           <Switch 
             checked={connected} 
-            onCheckedChange={setConnected}
+            disabled={localLoading}
+            onCheckedChange={handleToggle}
             className="data-[state=checked]:bg-primary scale-75"
           />
        </div>
+    </div>
+  );
+}
+
+export function PlatformList() {
+  const dispatch = useAppDispatch();
+
+  React.useEffect(() => {
+    dispatch(fetchProfile());
+  }, [dispatch]);
+
+  return (
+    <div className="divide-y divide-border/20">
+      {platformTargets.map((platform) => (
+        <PlatformListItem key={platform.id} platform={platform} />
+      ))}
     </div>
   );
 }

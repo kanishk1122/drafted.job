@@ -1,8 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
+  invoke: (channel, data) => {
+    let validChannels = ['launch-browser', 'launch-chrome-debug'];
+    if (validChannels.includes(channel)) {
+      return ipcRenderer.invoke(channel, data);
+    }
+  },
   send: (channel, data) => {
-    // Whitelist channels to prevent security issues
     let validChannels = ['toMain'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
@@ -11,7 +16,6 @@ contextBridge.exposeInMainWorld('electron', {
   receive: (channel, func) => {
     let validChannels = ['fromMain'];
     if (validChannels.includes(channel)) {
-      // Deliberately strip event as it includes `sender` 
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
   }

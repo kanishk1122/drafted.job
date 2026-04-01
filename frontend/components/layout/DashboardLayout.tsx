@@ -3,35 +3,18 @@
 import React, { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Navbar } from "./Navbar";
-import { cn } from "@/lib/utils";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-import { useRouter } from "next/navigation";
-import { useSelector, useDispatch } from "react-redux";
-import { RootState } from "@/lib/redux/store";
-import { fetchMe } from "@/lib/redux/slices/authSlice";
-
 export default function DashboardLayout({ children }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const router = useRouter();
-  const dispatch = useDispatch();
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
     setMounted(true);
-    // Sync session on mount
-    dispatch(fetchMe() as any);
-  }, [dispatch]);
-
-  useEffect(() => {
-    if (mounted && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [mounted, isAuthenticated, router]);
+  }, []);
 
   if (!mounted) return null;
 

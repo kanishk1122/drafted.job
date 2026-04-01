@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 };
 
 import { ReduxProvider } from "@/lib/redux/provider";
+import AuthGuard from "@/components/auth/AuthGuard";
 
 export default function RootLayout({
   children,
@@ -34,13 +35,15 @@ export default function RootLayout({
     >
       <body>
         <ReduxProvider>
-          <ThemeProvider>
-            {children}
-            <Toaster 
-              position="bottom-right" 
-              richColors={false}
-            />
-          </ThemeProvider>
+          <AuthGuard>
+            <ThemeProvider>
+              {children}
+              <Toaster 
+                position="bottom-right" 
+                richColors={false}
+              />
+            </ThemeProvider>
+          </AuthGuard>
         </ReduxProvider>
       </body>
     </html>

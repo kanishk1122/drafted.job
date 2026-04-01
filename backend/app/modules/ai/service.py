@@ -1,106 +1,68 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 from app.core.config import settings
 import json
+import re
 
 class AIService:
     def __init__(self):
-        self.api_key = settings.nvidia_api_key
-        # NVIDIA NIM API endpoint
-        self.client = OpenAI(
+        # NVIDIA NIM API configuration using UPPERCASE settings
+        self.api_key = settings.NVIDIA_API_KEY
+        self.model = settings.MODEL_NAME
+        self.client = AsyncOpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=self.api_key
-        )
+        ) if self.api_key else None
 
     async def extract_intent(self, user_message: str):
-        if not self.api_key:
-            # Fallback for testing if no API key is provided
+        if not self.client:
             print("Warning: NVIDIA_API_KEY not set. Using mock extraction.")
             return self._mock_extraction(user_message)
 
         prompt = f"""
-        Extract the professional intent from the following user bio/message.
-        Identify the role, years of experience, key skills, and primary goal (e.g., job search).
-        Return the result ONLY as a valid JSON object.
-
-        Message: "{user_message}"
-
-        JSON format:
-        {{
-            "role": "string",
-            "experience_years": integer,
-            "skills": ["string"],
-            "primary_goal": "string",
-            "summary": "string"
-        }}
+        Extract professional intent from bio: "{user_message}"
+        Identify: role, experience_years, skills (list), primary_goal, summary.
+        Return ONLY valid JSON.
         """
 
         try:
-            completion = self.client.chat.completions.create(
-                model=settings.nvidia_model,
+            completion = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                top_p=0.7,
                 max_tokens=1024,
+                timeout=15.0
             )
             
             response_text = completion.choices[0].message.content
-            # Cleanup potential markdown code blocks
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-            return json.loads(response_text)
+            # Tactical JSON cleanup
+            clean_json = re.sub(r"```json|```", "", response_text).strip()
+            return json.loads(clean_json)
         except Exception as e:
             print(f"Error calling NVIDIA NIM: {e}")
             return self._mock_extraction(user_message)
 
     async def parse_resume(self, resume_text: str):
-        if not self.api_key:
+        if not self.client:
             return self._mock_resume_parsing(resume_text)
 
         prompt = f"""
-        Extract professional information from the following resume text.
-        Structure the output as a valid JSON object containing:
-        - full_name
-        - email
-        - phone
-        - location
-        - summary
-        - skills (as a list)
-        - experience (as a list of objects with title, company, duration, description)
-        - education (as a list of objects)
-
-        Resume Text: "{resume_text}"
-
-        JSON format:
-        {{
-            "full_name": "string",
-            "email": "string",
-            "phone": "string",
-            "location": "string",
-            "summary": "string",
-            "skills": ["string"],
-            "experience": [{{ "title": "string", "company": "string", "duration": "string", "description": "string" }}],
-            "education": [{{ "degree": "string", "institution": "string", "year": "string" }}]
-        }}
+        Extract professional info from resume: "{resume_text[:2000]}"
+        Structure as JSON: full_name, email, phone, location, summary, skills (list), experience (list), education (list).
+        Return ONLY valid JSON.
         """
 
         try:
-            completion = self.client.chat.completions.create(
-                model=settings.nvidia_model,
+            completion = await self.client.chat.completions.create(
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2048,
+                timeout=30.0
             )
             
             response_text = completion.choices[0].message.content
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-            return json.loads(response_text)
+            clean_json = re.sub(r"```json|```", "", response_text).strip()
+            return json.loads(clean_json)
         except Exception as e:
             print(f"Error parsing resume via NVIDIA NIM: {e}")
             return self._mock_resume_parsing(resume_text)
@@ -118,18 +80,14 @@ class AIService:
         }
 
     def _mock_extraction(self, message: str):
-        # Very basic fallback logic for demonstration if API fails or key is missing
         message_lower = message.lower()
-        role = "Software Developer"
-        if "python" in message_lower: role = "Python Developer"
-        if "frontend" in message_lower: role = "Frontend Developer"
-        
+        role = "Python Developer" if "python" in message_lower else "Software Developer"
         return {
             "role": role,
-            "experience_years": 4, # Just a placeholder
+            "experience_years": 4,
             "skills": ["Python", "RESTful API"] if "python" in message_lower else [],
             "primary_goal": "Job Search",
-            "summary": "Extracted intent from user message (Mocked due to missing API key)"
+            "summary": "Extracted intent (Mocked due to missing AI credentials)"
         }
 
 ai_service = AIService()

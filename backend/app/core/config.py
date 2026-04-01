@@ -3,14 +3,16 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     app_name: str = "JobHuntr API"
-    database_url: str = os.getenv("DATABASE_URL", "postgresql://admin:password123@localhost:5432/jobhuntr")
-    nvidia_api_key: str = os.getenv("NVIDIA_API_KEY", "")
-    nvidia_model: str = os.getenv("MODEL_NAME", "qwen/qwen3.5-397b-a17b")
-    secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-tactical-key-256")
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 7 # 7 days
+    DATABASE_URL: str = "postgresql://admin:password123@localhost:5432/jobhuntr"
+    NVIDIA_API_KEY: str = ""
+    MODEL_NAME: str = "meta/llama-3.1-8b-instruct"
+    SECRET_KEY: str = "your-super-secret-tactical-key-256"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
     
     class Config:
-        case_sensitive = True
+        case_sensitive = False
+        env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()

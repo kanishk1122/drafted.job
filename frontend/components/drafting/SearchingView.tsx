@@ -1,136 +1,195 @@
 "use client";
 
-import React from "react";
-import { Search, Terminal, CheckCircle2 } from "lucide-react";
+import React, { useEffect, useRef } from "react";
+import { Search, Terminal, CheckCircle2, XCircle, Loader2, ChevronRight, Archive } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+
+export type Thought = { text: string; type: "thinking" | "match" | "skip" | "error" | "done" };
+export type JobMatch = { id: number; title: string; company: string; location: string; url: string; score: number; reason: string };
 
 interface SearchingViewProps {
-  searchProgress: number;
+  thoughts: Thought[];
+  jobs: JobMatch[];
+  isDone: boolean;
+  targetRole: string;
+  platform: string;
+  onStop: () => void;
 }
 
-export function SearchingView({ searchProgress }: SearchingViewProps) {
+export function SearchingView({ thoughts, jobs, isDone, targetRole, platform, onStop }: SearchingViewProps) {
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [thoughts]);
+
   return (
-    <motion.div 
+    <motion.div
       key="mission-searching"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="h-full w-full flex flex-col md:flex-row items-center gap-12 max-w-6xl mx-auto py-8 overflow-hidden"
+      className="h-full w-full flex flex-col md:flex-row gap-6 max-w-6xl mx-auto py-4 overflow-hidden"
     >
-      <div className="flex-1 flex flex-col items-center justify-center space-y-12">
-        <div className="text-center space-y-8">
-          <div className="relative flex items-center justify-center h-48 w-48 mx-auto">
-            <div className="absolute inset-0 border border-primary/10 rounded-full" />
-            <div className="absolute inset-4 border border-primary/5 rounded-full" />
-            <div className="absolute inset-8 border border-primary/5 rounded-full" />
-            
-            <motion.div 
-              className="absolute inset-0 border-t-2 border-primary/40 rounded-full"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            />
-            <motion.div 
-              className="absolute inset-0 bg-gradient-to-tr from-primary/20 via-transparent to-transparent rounded-full"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            />
-            
-            <div className="relative z-10 bg-card/60 backdrop-blur-xl h-20 w-20 rounded-full border-2 border-primary/30 flex items-center justify-center shadow-[0_0_30px_rgba(var(--primary-rgb),0.2)]">
-              <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <Search size={32} className="text-primary" />
-              </motion.div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h2 className="text-4xl font-black uppercase tracking-tighter text-foreground">Search Active</h2>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.4em] animate-pulse">Scanning 6 Career Ecosystems...</p>
-          </div>
-        </div>
-
-        <div className="w-full max-w-md space-y-4 px-4">
-          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest px-1">
-            <span className="text-primary">Search Progress</span>
-            <span className="text-foreground tabular-nums">{searchProgress}%</span>
-          </div>
-          <div className="h-2 w-full bg-card border border-border rounded-full overflow-hidden p-0.5 shadow-inner">
-            <motion.div 
-              className="h-full bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]"
-              initial={{ width: 0 }}
-              animate={{ width: `${searchProgress}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="w-full md:w-[450px] h-[550px] flex flex-col shrink-0 px-4">
-        <Card className="flex-1 bg-black/40 border-border/40 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col border-2 shadow-2xl relative">
-          <CardHeader className="p-4 border-b border-border/20 bg-muted/10 shrink-0">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-[10px] font-black flex items-center gap-2 tracking-[0.2em] uppercase text-primary">
-                <Terminal size={14} />
-                PROFESSIONAL DECISION STREAM
-              </CardTitle>
-              <Badge variant="outline" className="text-[8px] border-primary/20 text-primary animate-pulse">LIVE INDEXING</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0 flex-1 overflow-hidden relative">
-            <ScrollArea className="h-full font-mono">
-              <div className="p-6 space-y-3 pb-24">
-                <LogItem time="22:45:01" type="SYSTEM" message="Initializing Advanced Search Engine V2.4..." active={searchProgress > 0} />
-                <LogItem time="22:45:03" type="LINKEDIN" message="Scanning India Regional Cluster for 'Senior System Architect'..." active={searchProgress > 10} />
-                <LogItem time="22:45:08" type="ANALYSIS" message="MATCH: Frontend Lead @ Google. Score: 96% - Alignment: HIGH." active={searchProgress > 25} hilite />
-                <LogItem time="22:45:12" type="DECISION" message="INDEXED: Job Data Secured for Automated Cover Letter Prep." active={searchProgress > 30} hilite />
-                <LogItem time="22:45:20" type="NAUKRI" message="Scanning Naukri Premium Pool... 42 potential roles detected." active={searchProgress > 45} />
-                <LogItem time="22:45:25" type="DECISION" message="DISCARDED: Jr Web Dev (Experience Level Mismatch)." active={searchProgress > 60} />
-                <LogItem time="22:45:32" type="ANALYSIS" message="MATCH: AI Engineer @ Zomato. Score: 88% - Role Fit: HIGH." active={searchProgress > 75} />
-                <LogItem time="22:45:40" type="INDEED" message="Final Cleanup of Remote Ecosystems... 12 roles verified." active={searchProgress > 85} />
-                <LogItem time="22:45:55" type="SYSTEM" message="SEARCH COMPLETE: 12 Position Targets Captured. Archiving Session." active={searchProgress >= 98} hilite />
+      {/* LEFT: Status + Job Matches */}
+      <div className="w-full md:w-[340px] shrink-0 flex flex-col gap-4 overflow-y-auto no-scrollbar">
+        {/* Status Card */}
+        <div className="p-5 rounded-2xl border border-border bg-card/60 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="relative h-10 w-10">
+                <div className="absolute inset-0 border border-primary/20 rounded-full" />
+                <motion.div
+                  className="absolute inset-0 border-t-2 border-primary/60 rounded-full"
+                  animate={isDone ? {} : { rotate: 360 }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {isDone
+                    ? <CheckCircle2 size={18} className="text-green-500" />
+                    : <Search size={16} className="text-primary" />
+                  }
+                </div>
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest">{isDone ? "COMPLETE" : "SCOUTING"}</p>
+                <p className="text-[10px] text-muted-foreground">{platform.toUpperCase()} · {targetRole}</p>
+              </div>
+            </div>
+            {!isDone && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onStop}
+                className="h-8 w-8 rounded-lg border border-red-500/30 text-red-500 hover:bg-red-500/10"
+              >
+                <XCircle size={14} />
+              </Button>
+            )}
+          </div>
+
+          <div className="flex gap-4 text-center">
+            <div className="flex-1">
+              <p className="text-2xl font-black text-primary">{jobs.length}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Saved</p>
+            </div>
+            <div className="flex-1">
+              <p className="text-2xl font-black">{thoughts.length}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Analyzed</p>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {isDone && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="pt-2"
+              >
+                <Button 
+                  asChild
+                  className="w-full h-10 bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 font-black tracking-tighter"
+                >
+                  <a href="/vault" className="flex items-center justify-center gap-2">
+                    <Archive size={14} />
+                    GOTO VAULT
+                  </a>
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Job Matches */}
+        {jobs.length > 0 && (
+          <div className="space-y-2 overflow-y-auto no-scrollbar pb-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Saved to Vault</p>
+            {jobs.map((job, i) => (
+              <a
+                key={i}
+                href={job.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-3 rounded-xl border border-border bg-card/60 hover:border-primary/40 transition-all group"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate group-hover:text-primary transition-colors">{job.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{job.company}</p>
+                    <p className="text-[9px] text-muted-foreground/60 mt-0.5 line-clamp-2 italic">{job.reason}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <Badge className={cn(
+                      "text-[9px] font-black px-1.5 py-0",
+                      job.score >= 80 ? "bg-green-500/10 text-green-500 border-green-500/20" :
+                      job.score >= 60 ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20" :
+                      "bg-muted text-muted-foreground border-border"
+                    )}>
+                      {job.score}%
+                    </Badge>
+                    <ChevronRight size={12} className="text-muted-foreground group-hover:text-primary" />
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
       </div>
 
-      {searchProgress === 100 && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-green-500/10 border border-green-500/20 px-8 py-4 rounded-full backdrop-blur-md z-50 shadow-2xl shadow-green-500/20"
-        >
-          <CheckCircle2 size={16} className="text-green-500" />
-          <span className="text-[10px] font-black text-green-500 uppercase tracking-widest">Positions Successfully Indexed - Archiving Result</span>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-}
-
-function LogItem({ time, type, message, active, hilite }: { time: string, type: string, message: string, active: boolean, hilite?: boolean }) {
-  if (!active) return null;
-  return (
-    <motion.div 
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className={`p-2 rounded border border-transparent transition-all flex items-start gap-4 ${hilite ? 'bg-primary/10 border-primary/20' : 'hover:bg-white/5'}`}
-    >
-      <span className="text-[8px] text-muted-foreground/60 font-mono mt-0.5">{time}</span>
-      <div className="space-y-1 text-[10px]">
-        <div className="flex items-center gap-2">
-          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded leading-none ${hilite ? 'bg-primary text-primary-foreground' : 'bg-muted-foreground/10 text-muted-foreground'}`}>
-            {type}
-          </span>
-          <div className={`h-1 w-1 rounded-full ${hilite ? 'bg-primary animate-pulse' : 'bg-muted-foreground/40'}`} />
+      {/* RIGHT: AI Terminal */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="p-3 rounded-t-2xl border border-b-0 border-border bg-muted/40 flex items-center gap-3 shrink-0">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/70" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+            <div className="w-3 h-3 rounded-full bg-green-500/70" />
+          </div>
+          <Terminal size={12} className="text-primary" />
+          <p className="text-[10px] font-mono font-black text-muted-foreground uppercase tracking-widest">
+            AI DECISION STREAM
+          </p>
+          {!isDone && <Loader2 size={12} className="text-primary animate-spin ml-auto" />}
+          {isDone && <CheckCircle2 size={12} className="text-green-500 ml-auto" />}
+          {!isDone && (
+            <Badge variant="outline" className="text-[8px] border-primary/20 text-primary animate-pulse ml-1">LIVE</Badge>
+          )}
         </div>
-        <p className={`uppercase tracking-tight leading-relaxed ${hilite ? 'text-primary font-bold' : 'text-muted-foreground text-opacity-80'}`}>
-          {message}
-        </p>
+
+        <div
+          ref={logRef}
+          className="flex-1 overflow-y-auto p-4 rounded-b-2xl border border-border bg-black/70 font-mono text-[11px] space-y-1.5 no-scrollbar"
+        >
+          {thoughts.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground/30">
+              <p className="uppercase tracking-widest text-[10px]">Connecting to local Chrome...</p>
+            </div>
+          ) : (
+            thoughts.map((t, i) => (
+              <motion.p
+                key={i}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2 }}
+                className={cn(
+                  "leading-relaxed",
+                  t.type === "match" ? "text-green-400" :
+                  t.type === "skip"  ? "text-yellow-600/70" :
+                  t.type === "error" ? "text-red-400" :
+                  t.type === "done"  ? "text-primary font-bold" :
+                  "text-muted-foreground"
+                )}
+              >
+                <span className="text-muted-foreground/25 mr-2 select-none">{String(i+1).padStart(3,"0")}</span>
+                {t.text}
+              </motion.p>
+            ))
+          )}
+        </div>
       </div>
     </motion.div>
   );

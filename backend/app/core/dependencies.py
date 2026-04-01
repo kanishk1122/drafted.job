@@ -13,7 +13,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="No access token found.")
     
     try:
-        payload = jwt.decode(token=access_token, key=settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(token=access_token, key=settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Could not validate professional credentials.")

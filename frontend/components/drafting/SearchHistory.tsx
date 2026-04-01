@@ -23,43 +23,7 @@ export interface SearchSession {
   }[];
 }
 
-export const initialSessions: SearchSession[] = [
-  {
-    id: 1,
-    name: "Morning Market Scan",
-    status: "completed",
-    date: "Today, 10:30 AM",
-    totalJobs: 184,
-    breakdown: [
-      { platform: "LinkedIn", logo: "https://www.google.com/s2/favicons?domain=linkedin.com&sz=128", count: 42 },
-      { platform: "Naukri", logo: "https://www.google.com/s2/favicons?domain=naukri.com&sz=128", count: 124 },
-      { platform: "Indeed", logo: "https://www.google.com/s2/favicons?domain=indeed.com&sz=128", count: 18 },
-    ],
-  },
-  {
-    id: 2,
-    name: "Evening Role Discovery",
-    status: "completed",
-    date: "Yesterday, 11:15 PM",
-    totalJobs: 65,
-    breakdown: [
-      { platform: "Foundit", logo: "https://www.google.com/s2/favicons?domain=foundit.in&sz=128", count: 56 },
-      { platform: "Glassdoor", logo: "https://www.google.com/s2/favicons?domain=glassdoor.com&sz=128", count: 9 },
-    ],
-  },
-  {
-    id: 3,
-    name: "Advanced Depth Indexing",
-    status: "failed",
-    error: "Proxy Rate Limit",
-    date: "Mar 26, 09:10 AM",
-    totalJobs: 22,
-    breakdown: [
-      { platform: "LinkedIn", logo: "https://www.google.com/s2/favicons?domain=linkedin.com&sz=128", count: 22 },
-      { platform: "AmbitionBox", logo: "https://www.google.com/s2/favicons?domain=ambitionbox.com&sz=128", count: 0 },
-    ],
-  },
-];
+
 
 export function SessionItem({ session, onRestart, onDelete }: { session: SearchSession; onRestart?: (s: SearchSession) => void; onDelete?: (id: number | string) => void }) {
   return (

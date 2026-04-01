@@ -46,8 +46,16 @@ class AIService:
             return self._mock_resume_parsing(resume_text)
 
         prompt = f"""
-        Extract professional info from resume: "{resume_text[:2000]}"
+        Extract professional info from resume: "{resume_text[:4000]}"
         Structure as JSON: full_name, email, phone, location, summary, skills (list), experience (list), education (list).
+        
+        Surgical Extraction Rules:
+        1. EDUCATION: For each item, capture: "degree", "institution" (be specific), "duration" (years). If missing, use empty string.
+        2. EXPERIENCE: For each item, capture: "role", "company", "duration", "description".
+        3. SKILLS EXPANSION: Extract explicit skills AND infer relational skills. 
+           (e.g., If 'BeautifulSoup' or 'Scrapy' is found, add 'Python'. If 'React' is found, add 'JavaScript/TypeScript' and 'Frontend'). 
+           Ensure all important modern technical stack anchors are present and but also include the skill which is mentioned originally.
+        
         Return ONLY valid JSON.
         """
 
@@ -61,10 +69,19 @@ class AIService:
             )
             
             response_text = completion.choices[0].message.content
+            # Surgical extraction of the first JSON object
+            json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
+            if json_match:
+                clean_json = json_match.group(1).strip()
+                print(f"Isolated Identity Pulse: {clean_json}")
+                return json.loads(clean_json)
+            
+            # Fallback for code blocks
             clean_json = re.sub(r"```json|```", "", response_text).strip()
+            print(clean_json)
             return json.loads(clean_json)
         except Exception as e:
-            print(f"Error parsing resume via NVIDIA NIM: {e}")
+            print(f"Error parsing resume via NVIDIA NIM: {e}. Raw response start: {response_text[:100] if 'response_text' in locals() else 'N/A'}")
             return self._mock_resume_parsing(resume_text)
 
     def _mock_resume_parsing(self, text: str):

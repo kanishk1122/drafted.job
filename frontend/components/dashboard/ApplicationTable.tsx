@@ -17,7 +17,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { cn, formatToIST } from "@/lib/utils";
 import { useAppSelector, useAppDispatch } from "@/lib/redux/store";
 import { createManualJob } from "@/lib/redux/slices/jobSlice";
 import { toast } from "sonner";
@@ -237,7 +237,9 @@ export function ApplicationTable() {
                        </Badge>
                     </td>
                     <td className="p-4">
-                      <p className="text-[10px] font-black font-mono text-muted-foreground">{app.created_at?.split('T')[0] || "LOGGED"}</p>
+                      <p className="text-[10px] font-black font-mono text-muted-foreground">
+                        {app.created_at ? formatToIST(app.created_at, false) : "LOGGED"}
+                      </p>
                     </td>
                     <td className="p-4 text-center">
                       <Button 

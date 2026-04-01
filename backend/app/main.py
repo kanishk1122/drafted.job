@@ -8,6 +8,7 @@ from app.modules.user import model as user_model
 from app.modules.job import model as job_model
 from app.modules.resume import model as resume_model
 from app.modules.browser import session_model as scout_session_model  # NEW: Scout session history
+from app.modules.ai import model as ai_model # NEW: Tactical Recommendations
 
 # Create database tables (In production, use Alembic)
 Base.metadata.create_all(bind=engine)

@@ -6,6 +6,8 @@ import profileReducer from './slices/profileSlice';
 import resumeReducer from './slices/resumeSlice';
 import jobReducer from './slices/jobSlice';
 import browserReducer from './slices/browserSlice';
+import aiReducer from './slices/aiSlice';
+import uiReducer from './slices/uiSlice';
 
 export const store = configureStore({
   reducer: {
@@ -15,6 +17,8 @@ export const store = configureStore({
     resume: resumeReducer,
     job: jobReducer,
     browser: browserReducer,
+    ai: aiReducer,
+    ui: uiReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

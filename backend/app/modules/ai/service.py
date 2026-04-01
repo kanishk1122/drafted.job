@@ -126,6 +126,56 @@ class AIService:
             "education": []
         }
 
+    async def generate_tactical_recommendations(self, user_info: dict, resume_text: str):
+        if not self.client:
+            return self._mock_recommendations()
+
+        prompt = f"""
+        Analyze candidate profile and resume to generate 3 UNIQUE, TACTICAL career recommendations.
+        
+        User Context: {json.dumps(user_info)}
+        Resume Excerpt: {resume_text[:2000]}
+        
+        Rules:
+        1. BE SPECIFIC: Don't say "Learn Python". Say "Learn FastAPI and SQLAlchemy to transition into Backend Search Architecture".
+        2. BE STRATEGIC: Identify role adjacencies (e.g., if they are a React dev, suggest 'Software Engineer in Test' or 'Technical Lead - Design Systems').
+        3. BE ACTIONABLE: Each rec must have a Title, Description (2 sentences), and Category (Role, Skill, or Network).
+        
+        Format: Return ONLY a JSON list of 3 items.
+        Example: 
+        [
+          {{"title": "Bridge to DevOps", "description": "Leverage your Python skills by learning Terraform. Your experience in CLI tools makes this a high-impact transition.", "category": "Skill"}},
+          ...
+        ]
+        """
+
+        try:
+            completion = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7, # Higher temp for more unique suggestions
+                max_tokens=1024,
+                timeout=20.0
+            )
+            
+            response_text = completion.choices[0].message.content
+            json_match = re.search(r'(\[.*\])', response_text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1).strip())
+            
+            clean_json = re.sub(r"```json|```", "", response_text).strip()
+            return json.loads(clean_json)
+        except Exception as e:
+            print(f"Error generating recommendations: {e}")
+            return self._mock_recommendations()
+
+    def _mock_recommendations(self):
+        return [
+            {"title": "Tactical Role: Full Stack Lead", "description": "Transition your React expertise into a Lead position by focusing on System Design patterns and architecting high-performance frontend pipelines.", "category": "Role"},
+            {"title": "Bridge Skill: Rust for Performance", "description": "Incorporate Rust into your Python data scrapers. This provides a 10x throughput improvement for the mission-critical scouting nodes.", "category": "Skill"},
+            {"title": "Network Hub: LinkedIn Open Source", "description": "Contribute to three major Node.js middleware projects to establish authority in the backend ecosystem and attract high-tier recruiter attention.", "category": "Network"}
+        ]
+
     def _mock_extraction(self, message: str):
         message_lower = message.lower()
         role = "Python Developer" if "python" in message_lower else "Software Developer"

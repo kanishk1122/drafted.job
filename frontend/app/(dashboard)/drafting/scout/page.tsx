@@ -2,9 +2,8 @@
 
 import React, { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCcw, Home } from "lucide-react";
+import { ArrowLeft,  Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/layout/DashboardLayout";
 import { SearchingView, Thought, JobMatch } from "@/components/drafting/SearchingView";
 import { useAppSelector } from "@/lib/redux/store";
 import { toast } from "sonner";
@@ -151,7 +150,7 @@ function MissionPage() {
   };
 
   return (
-    <DashboardLayout>
+  
       <div className="h-full min-h-[600px] flex flex-col p-4 overflow-hidden relative">
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" onClick={() => router.push("/drafting")} className="gap-2">
@@ -191,6 +190,5 @@ function MissionPage() {
           </motion.div>
         )}
       </div>
-    </DashboardLayout>
   );
 }

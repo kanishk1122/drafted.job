@@ -3,13 +3,17 @@
 import React, { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Navbar } from "./Navbar";
+import { useAppSelector, useAppDispatch } from "@/lib/redux/store";
+import { setSidebarMode } from "@/lib/redux/slices/uiSlice";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export default function DashboardLayout({ children }: LayoutProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const dispatch = useAppDispatch();
+  const { sidebarMode } = useAppSelector((state) => state.ui);
+  const [isHovered, setIsHovered] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -18,17 +22,32 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
   if (!mounted) return null;
 
+  // Compute effective collapsed state based on Redux mode + local hover state
+  const isCollapsed = sidebarMode === 'mini' || (sidebarMode === 'hover' && !isHovered);
+
+  const handleToggle = () => {
+    // Toggles between default (full) and mini (collapsed)
+    const nextMode = sidebarMode === 'default' ? 'mini' : 'default';
+    dispatch(setSidebarMode(nextMode));
+  };
+
   return (
-    <div className="flex h-screen bg-background text-foreground font-sans selection:bg-primary/30  transition-colors duration-500">
-      {/* Sidebar Component stays fixed */}
-      <Sidebar collapsed={sidebarCollapsed} />
+    <div className="flex h-screen bg-background text-foreground font-sans selection:bg-primary/30 transition-colors duration-500">
+      {/* Sidebar Container with Hover-Reveal logic */}
+      <div 
+        onMouseEnter={() => sidebarMode === 'hover' && setIsHovered(true)}
+        onMouseLeave={() => sidebarMode === 'hover' && setIsHovered(false)}
+        className="h-full transition-all duration-500"
+      >
+        <Sidebar collapsed={isCollapsed} />
+      </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 relative h-full ">
-        {/* Navbar stays fixed at top */}
-        <Navbar onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        {/* Navbar with reactive toggler */}
+        <Navbar onToggleSidebar={handleToggle} />
         
-        <main className="flex-1 relative overflow-y-scroll  flex flex-col">
+        <main className="flex-1 relative overflow-y-scroll flex flex-col">
           <div className="flex-1 w-full relative p-4 h-[calc(100vh-10rem)]">
              {children}
           </div>

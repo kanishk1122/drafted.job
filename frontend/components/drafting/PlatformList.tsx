@@ -1,12 +1,13 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, ArrowUpRight } from "lucide-react";
+import { ShieldCheck, ArrowUpRight, Plus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector, RootState } from "@/lib/redux/store";
 import { fetchProfile, updatePlatformStatus } from "@/lib/redux/slices/profileSlice";
 import { toast } from "sonner";
+import Link from "next/link";
 
 interface SearchChannel {
   id: number;
@@ -18,7 +19,7 @@ interface SearchChannel {
   url: string;
 }
 
-export const platformTargets = [
+export const platformTargets: SearchChannel[] = [
   { 
     id: 1, 
     name: "LinkedIn India", 
@@ -135,16 +136,41 @@ export function PlatformListItem({ platform }: { platform: SearchChannel }) {
 
 export function PlatformList() {
   const dispatch = useAppDispatch();
+  const context = useAppSelector((state: RootState) => state.profile.context);
 
   React.useEffect(() => {
     dispatch(fetchProfile());
   }, [dispatch]);
 
+  const activeTargets = platformTargets.filter(p => (context as any)?.[`${p.key}_active`]);
+
   return (
-    <div className="divide-y divide-border/20">
-      {platformTargets.map((platform) => (
-        <PlatformListItem key={platform.id} platform={platform} />
-      ))}
+    <div className="flex flex-col">
+      <div className="divide-y divide-border/20 max-h-[350px] overflow-y-auto">
+        {activeTargets.length > 0 ? (
+          activeTargets.map((platform) => (
+            <PlatformListItem key={platform.id} platform={platform} />
+          ))
+        ) : (
+          <div className="p-10 text-center space-y-3">
+             <div className="w-12 h-12 rounded-full bg-muted/40 flex items-center justify-center mx-auto opacity-40">
+                <ShieldCheck size={20} className="text-muted-foreground" />
+             </div>
+             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-relaxed">
+               No Active Sectors<br/>Verified on Chrome
+             </p>
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-border/20 bg-muted/10">
+        <Link href="/connect" className="w-full">
+           <button className="w-full h-11 rounded-xl border border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group text-primary">
+              <Plus size={14} className="group-hover:rotate-90 transition-transform" />
+              Add Platform
+           </button>
+        </Link>
+      </div>
     </div>
   );
 }

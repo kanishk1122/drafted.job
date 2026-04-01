@@ -35,10 +35,10 @@ PLATFORM_SEARCH_CONFIG = {
             f"&l={urllib.parse.quote_plus(loc)}"
             f"&fromage=1"
         ),
-        "job_card_selectors": ["div.job_seen_beacon", "td.resultContent", "li.css-5lfssm"],
-        "wait_selector": "div.job_seen_beacon, td.resultContent",
-        "title_selector": "h2.jobTitle span, a.jcs-JobTitle",
-        "company_selector": "[data-testid='company-name'], .companyName",
+        "job_card_selectors": ["div.cardOutline", "div.job_seen_beacon", "td.resultContent"],
+        "wait_selector": "div.cardOutline, div.job_seen_beacon, td.resultContent",
+        "title_selector": "h2.jobTitle span[title], a.jcs-JobTitle",
+        "company_selector": "[data-testid='company-name'], .companyName, .css-1h4s93d",
         "location_selector": "[data-testid='text-location'], .companyLocation",
     },
     "foundit": {
@@ -291,7 +291,23 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
             # 1. Harvest Job IDs first (handles go stale in virtual lists)
             job_ids = []
             for sel in config.get("job_card_selectors", []):
-                ids = await page.evaluate(f"(sel) => Array.from(document.querySelectorAll(sel)).map(el => el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id')).filter(id => !!id)", sel)
+                # Robust harvester: Look for LinkedIn ID, Generic ID, or Indeed Direct Key (JK)
+                harvest_script = """(sel) => {
+                    return Array.from(document.querySelectorAll(sel)).map(el => {
+                        // Direct ID matches
+                        const direct = el.getAttribute('data-occludable-job-id') || 
+                                     el.getAttribute('data-job-id') || 
+                                     el.getAttribute('data-jk');
+                        if (direct) return direct;
+                        
+                        // Indeed specific: search for jcs-JobTitle link inside
+                        const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
+                        if (link) return link.getAttribute('data-jk');
+                        
+                        return null;
+                    }).filter(id => !!id);
+                }"""
+                ids = await page.evaluate(harvest_script, sel)
                 if ids: job_ids = ids; break
             
             if not job_ids:
@@ -340,7 +356,7 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                 for i, job_id in enumerate(job_ids[:25]):
                     try:
                         # 2. Re-find card by ID inside the loop (Resilience)
-                        id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}']"
+                        id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], .job_{job_id}"
                         card = await page.query_selector(id_selector)
                         if not card: continue
 

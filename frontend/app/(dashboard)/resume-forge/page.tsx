@@ -33,7 +33,7 @@ import {
   DialogTitle, 
   DialogDescription,
   DialogFooter
-} from "@/components/ui/";
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppDispatch, useAppSelector, RootState } from "@/lib/redux/store";
 import { fetchMyResume, updateResume } from "@/lib/redux/slices/resumeSlice";

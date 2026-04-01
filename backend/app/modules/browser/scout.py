@@ -377,8 +377,10 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
 
                         yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
 
+                        
                         if score <= 70:
                             yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
+                            yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
                             continue
 
                         if db.query(JobRepository).filter(JobRepository.url == link).first():
@@ -393,15 +395,27 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                 
                 current_page += 1
 
-            breakdown = [{"platform": platform.capitalize(), "logo": f"https://www.google.com/s2/favicons?domain={platform}.com&sz=128", "count": saved_count}]
-            db.query(ScoutSession).filter(ScoutSession.id == session_id).update({"status": "completed", "total_jobs": saved_count, "breakdown": breakdown}); db.commit()
             yield json.dumps({"type": "done", "count": saved_count, "session_id": session_id})
 
         except Exception as e:
             err = str(e)
-            db.query(ScoutSession).filter(ScoutSession.id == session_id).update({"status": "failed", "error_msg": err}); db.commit()
+            db.query(ScoutSession).filter(ScoutSession.id == session_id).update({"status": "failed", "error_msg": err})
+            db.commit()
             yield json.dumps({"type": "chrome_offline" if "port 9223" in err or "ConnectError" in err else "error", "message": err})
         finally:
+            # Secure final mission report even if session was aborted early
+            try:
+                session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
+                if session and session.status == "running":
+                    platform_name = "Linkedin" if platform.lower() == "linkedin" else platform.capitalize()
+                    final_breakdown = [{"platform": platform_name, "logo": f"https://www.google.com/s2/favicons?domain={platform.lower()}.com&sz=128", "count": saved_count}]
+                    session.status = "completed"
+                    session.total_jobs = saved_count
+                    session.breakdown = final_breakdown
+                    db.commit()
+            except Exception as commit_err:
+                print(f"Failed to commit final session stats: {commit_err}")
+
             if browser: await browser.close()
             if pw: await pw.stop()
 

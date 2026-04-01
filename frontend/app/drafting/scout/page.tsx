@@ -27,14 +27,16 @@ function MissionPage() {
   const user = useAppSelector((state) => state.auth);
 
   // Get mission params from URL or localStorage
-  const platform = searchParams.get("platform") || "linkedin";
-  const targetRole = searchParams.get("role") || "";
-  const location = searchParams.get("location") || "India";
+  const [platform, setPlatform] = useState(searchParams.get("platform") || "linkedin");
+  const [targetRole, setTargetRole] = useState(searchParams.get("role") || "");
+  const [location, setLocation] = useState(searchParams.get("location") || "India");
   const isResuming = searchParams.get("resume") === "true";
 
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [jobs, setJobs] = useState<JobMatch[]>([]);
+  const [rejected, setRejected] = useState<JobMatch[]>([]);
   const [isDone, setIsDone] = useState(false);
+  const [isAborting, setIsAborting] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   // Restore state if resuming
@@ -43,8 +45,12 @@ function MissionPage() {
       const saved = localStorage.getItem(LS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        setPlatform(parsed.platform || "linkedin");
+        setTargetRole(parsed.targetRole || "");
+        setLocation(parsed.location || "India");
         setThoughts(parsed.thoughts || []);
         setJobs(parsed.jobs || []);
+        setRejected(parsed.rejected || []);
         setIsDone(parsed.isDone || false);
       }
     }
@@ -52,8 +58,8 @@ function MissionPage() {
 
   // Persist state
   useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify({ thoughts, jobs, isDone, platform, targetRole, location }));
-  }, [thoughts, jobs, isDone, platform, targetRole, location]);
+    localStorage.setItem(LS_KEY, JSON.stringify({ thoughts, jobs, rejected, isDone, platform, targetRole, location }));
+  }, [thoughts, jobs, rejected, isDone, platform, targetRole, location]);
 
   const startScout = useCallback(() => {
     if (!user.userEmail) return;
@@ -82,6 +88,8 @@ function MissionPage() {
       } else if (event.type === "job_found") {
         setJobs(prev => [...prev, event.data]);
         toast.success(`Match: ${event.data.title}`);
+      } else if (event.type === "job_skipped") {
+        setRejected(prev => [...prev, event.data]);
       } else if (event.type === "done") {
         setThoughts(prev => [...prev, { text: "🏁 Mission Accomplished — Data Saved.", type: "done" }]);
         setIsDone(true);
@@ -127,13 +135,15 @@ function MissionPage() {
     return () => es.close();
   }, [user.userEmail, platform, targetRole, location]); // Dependencies should only be starting parameters
 
+  const hasStarted = useRef(false);
+
   useEffect(() => {
-    // Only start if not resuming and user is ready, and we haven't started yet
-    if (!isResuming && user.userEmail && thoughts.length === 0 && !isDone) {
-      const cleanup = startScout();
-      return cleanup;
+    // Reconnect bridge if mission is active and user is ready
+    if (user.userEmail && !hasStarted.current && !isDone) {
+      hasStarted.current = true;
+      startScout();
     }
-  }, [isResuming, user.userEmail, startScout]); // Note: thoughts.length check is fine here to prevent double-start on mount
+  }, [user.userEmail, startScout, isDone]);
 
   const handleFinish = () => {
     localStorage.removeItem(LS_KEY);
@@ -158,21 +168,25 @@ function MissionPage() {
           <SearchingView
             thoughts={thoughts}
             jobs={jobs}
+            rejected={rejected}
             isDone={isDone}
             targetRole={targetRole}
             platform={platform}
             onStop={() => { esRef.current?.close(); setIsDone(true); }}
+            onFinish={handleFinish}
+            
+            onAbortStateChange={(val) => setIsAborting(val)}
           />
         </div>
 
-        {isDone && (
+        {isDone && !isAborting && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="absolute -bottom-0 left-52 -translate-x-1/2"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-auto"
           >
-            <Button onClick={handleFinish} className="rounded-full px-12 h-14 font-black text-xs uppercase shadow-2xl shadow-primary/30 gap-2">
-              <Home size={16} /> RETURN TO CONTROL CENTER
+            <Button onClick={handleFinish} className="rounded-full px-12 h-16 font-black text-xs uppercase shadow-[0_0_40px_rgba(var(--primary-rgb),0.4)] hover:shadow-[0_0_60px_rgba(var(--primary-rgb),0.6)] transition-all duration-500 gap-3 border-2 border-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground">
+              <Home size={18} className="animate-pulse" /> RETURN TO CONTROL HUB
             </Button>
           </motion.div>
         )}

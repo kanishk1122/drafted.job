@@ -31,7 +31,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
         {/* Main content - we'll let components handle their own scrolling if needed,
             but for a standard dashboard, we'll use a standard auto-y scroll for flexibility */}
         <main className="flex-1 p-4 sm:p-8 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="max-w-[1600px] mx-auto min-h-full">
+          <div className=" mx-auto min-h-full">
              {children}
           </div>
         </main>

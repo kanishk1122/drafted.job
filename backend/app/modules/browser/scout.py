@@ -37,9 +37,9 @@ PLATFORM_SEARCH_CONFIG = {
         ),
         "job_card_selectors": ["div.cardOutline", "div.job_seen_beacon", "td.resultContent"],
         "wait_selector": "div.cardOutline, div.job_seen_beacon, td.resultContent",
-        "title_selector": "h2.jobTitle span[title], a.jcs-JobTitle",
+        "title_selector": "h2.jobTitle a, a.jcs-JobTitle",
         "company_selector": "[data-testid='company-name'], .companyName, .css-1h4s93d",
-        "location_selector": "[data-testid='text-location'], .companyLocation",
+        "location_selector": "[data-testid='text-location'], .companyLocation, .css-1p99vba",
     },
     "foundit": {
         "search_url": lambda q, loc: (
@@ -347,7 +347,18 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                     
                     # Re-harvest fresh IDs for the new page
                     for sel in config.get("job_card_selectors", []):
-                        ids = await page.evaluate(f"(sel) => Array.from(document.querySelectorAll(sel)).map(el => el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id')).filter(id => !!id)", sel)
+                        harvest_script = """(sel) => {
+                            return Array.from(document.querySelectorAll(sel)).map(el => {
+                                const direct = el.getAttribute('data-occludable-job-id') || 
+                                             el.getAttribute('data-job-id') || 
+                                             el.getAttribute('data-jk');
+                                if (direct) return direct;
+                                const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
+                                if (link) return link.getAttribute('data-jk');
+                                return null;
+                            }).filter(id => !!id);
+                        }"""
+                        ids = await page.evaluate(harvest_script, sel)
                         if ids: job_ids = ids; break
                     
                     if not job_ids: break
@@ -369,6 +380,8 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                             
                             data = await _extract_card_data_linkedin(card)
                         else:
+                            # 3. Hybrid Hydration Grace Period (Indeed)
+                            await asyncio.sleep(0.5) 
                             data = await _extract_card_data_generic(card, config, location)
 
                         title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
@@ -381,6 +394,9 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                         if is_linkedin:
                             if job_id and (not link or link.startswith("/")): link = f"https://www.linkedin.com/jobs/view/{job_id}/"
                             elif link.startswith("/"): link = "https://www.linkedin.com" + link
+                        elif platform.lower() == "indeed":
+                            if job_id and (not link or link.startswith("/")): link = f"https://in.indeed.com/viewjob?jk={job_id}"
+                            elif link.startswith("/"): link = "https://in.indeed.com" + link
                         
                         yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
                         job_desc = await _get_job_detail_via_panel(page, card, job_id) if is_linkedin else f"{title} at {company} in {loc}"

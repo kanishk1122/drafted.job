@@ -21,4 +21,4 @@ else
     echo "Warning: noVNC proxy not found."
 fi
 
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload

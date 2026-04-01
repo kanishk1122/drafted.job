@@ -86,6 +86,24 @@ async def upload_resume(
     db.commit()
     db.refresh(db_resume)
 
+    # Tactical Sync: Update UserContext with primary professional data
+    from app.modules.user.model import UserContext
+    user = db.query(UserContext).filter(UserContext.id == user_id).first()
+    if user:
+        # Update core skills for scouting heuristic
+        if data.get("skills"):
+            user.skills = ", ".join(data.get("skills")[:15]) # Top 15 skills
+        
+        # Save raw text for deep context matching
+        user.resume_text = raw_text
+        
+        # Update target role if current is empty (guess from most recent experience or summary)
+        if not user.target_roles and data.get("experience"):
+            first_exp = data.get("experience")[0]
+            user.target_roles = first_exp.get("role") or first_exp.get("title")
+            
+        db.commit()
+
     return {
         "id": db_resume.id,
         "filename": db_resume.filename,
@@ -93,3 +111,74 @@ async def upload_resume(
         "skills": data.get("skills"),
         "professional_data": data
     }
+
+@router.get("/my/{user_id}")
+async def get_my_resume(user_id: int, db: Session = Depends(get_db)):
+    """Retrieve the most recent resume record for a user or create a shell one if none exists."""
+    resume = db.query(Resume).filter(Resume.user_id == user_id).order_by(Resume.created_at.desc()).first()
+    
+    if not resume:
+        # Self-healing: Initialize a shell record if none exists to avoid 404
+        resume = Resume(user_id=user_id, filename="Manual Profile")
+        db.add(resume)
+        db.commit()
+        db.refresh(resume)
+
+    def safe_json_load(val):
+        if not val: return []
+        try:
+            return json.loads(val)
+        except:
+            if isinstance(val, str) and "," in val:
+                return [s.strip() for s in val.split(",")]
+            return [val] if val else []
+
+    return {
+        "id": resume.id,
+        "filename": resume.filename,
+        "full_name": resume.full_name,
+        "email": resume.email,
+        "phone": resume.phone,
+        "location": resume.location,
+        "summary": resume.summary,
+        "skills": safe_json_load(resume.skills),
+        "experience": safe_json_load(resume.experience),
+        "education": safe_json_load(resume.education),
+        "updated_at": resume.updated_at
+    }
+
+@router.patch("/sync/{user_id}")
+async def sync_resume_data(
+    user_id: int, 
+    data: dict, 
+    db: Session = Depends(get_db)
+):
+    """Update or Create resume data manually."""
+    resume = db.query(Resume).filter(Resume.user_id == user_id).order_by(Resume.created_at.desc()).first()
+    
+    if not resume:
+        # Self-healing: Create a shell record if none exists
+        resume = Resume(user_id=user_id, filename="Manual Profile")
+        db.add(resume)
+        db.flush() 
+
+    for key, value in data.items():
+        if key in ["skills", "experience", "education"] and value is not None:
+            setattr(resume, key, json.dumps(value))
+        elif hasattr(resume, key) and value is not None:
+          setattr(resume, key, value)
+    
+    db.commit()
+    db.refresh(resume)
+
+    # Signal synchronization to UserContext
+    from app.modules.user.model import UserContext
+    user = db.query(UserContext).filter(UserContext.id == user_id).first()
+    if user:
+        if "skills" in data and data["skills"]:
+            user.skills = ", ".join(data["skills"][:15])
+        if "summary" in data:
+            user.summary = data["summary"]
+        db.commit()
+
+    return {"message": "Identity hub synchronized successfully", "id": resume.id}

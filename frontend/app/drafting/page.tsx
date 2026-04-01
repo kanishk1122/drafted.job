@@ -12,6 +12,7 @@ import { useAppSelector, useAppDispatch, RootState } from "@/lib/redux/store";
 import { fetchProfile } from "@/lib/redux/slices/profileSlice";
 import { toast } from "sonner";
 import { browserApiService } from "@/lib/services/browser-api-service";
+import { fetchBrowserSessions, deleteBrowserSession } from "@/lib/redux/slices/browserSlice";
 
 import { PlatformList } from "@/components/drafting/PlatformList";
 import { SearchHistory, SearchSession } from "@/components/drafting/SearchHistory";
@@ -30,8 +31,7 @@ export default function DraftingPage() {
   const [targetRole, setTargetRole] = useState("");
   const [location, setLocation] = useState("India");
   const [platform, setPlatform] = useState("linkedin");
-  const [sessions, setSessions] = useState<SearchSession[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const { sessions, loading: sessionsLoading } = useAppSelector((state: RootState) => state.browser);
   const [activeMission, setActiveMission] = useState<any>(null);
 
   // Compute active platforms from individual flags in Redux state
@@ -55,13 +55,10 @@ export default function DraftingPage() {
   }, [dispatch, context]);
 
   const loadSessions = useCallback(async () => {
-    if (!user.userEmail) return;
-    setSessionsLoading(true);
-    try {
-      const data = await browserApiService.fetchSessions(user.userEmail);
-      setSessions(data);
-    } catch {} finally { setSessionsLoading(false); }
-  }, [user.userEmail]);
+    if (user.userEmail) {
+       dispatch(fetchBrowserSessions(user.userEmail));
+    }
+  }, [dispatch, user.userEmail]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -90,7 +87,7 @@ export default function DraftingPage() {
 
   return (
     <DashboardLayout>
-      <div className="relative h-full overflow-hidden p-2">
+      <div className="relative h-[100%]  p-2">
         <AnimatePresence mode="wait">
 
           {/* ────── ACTIVE MISSION OVERLAY (The "Redirect" Logic) ────── */}
@@ -126,7 +123,7 @@ export default function DraftingPage() {
               exit={{ opacity: 0, scale: 0.98 }}
               className="h-full overflow-y-auto no-scrollbar pb-12 pt-16 md:pt-4"
             >
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 ">
                 <div className="space-y-2">
                   <h1 className="text-5xl font-black tracking-tighter uppercase text-foreground">Drafting Hub</h1>
                   <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">
@@ -170,11 +167,15 @@ export default function DraftingPage() {
                 <div className="lg:col-span-2 space-y-8">
                   <SearchHistory
                     sessions={sessions}
-                    onDelete={(id) => setSessions(prev => prev.filter(s => s.id !== id))}
-                    onClearAll={() => setSessions([])}
+                    onDelete={(id) => {
+                      if (user.userEmail) {
+                        dispatch(deleteBrowserSession({ sessionId: id, userId: user.userEmail }));
+                      }
+                    }}
+                    onClearAll={() => {}} 
                     onRestart={handleRestartSession}
                   />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-24">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 ">
                     <Card className="bg-card/40 border-border backdrop-blur-md border-t-2 border-primary/20 p-6 space-y-3">
                       <ConfigBlock label="Search Mode" value="INDUSTRIAL AI SCORING" />
                       <ConfigBlock label="Concurrency" value="HEADLESS PLAYWRIGHT" />

@@ -181,4 +181,26 @@ async def sync_resume_data(
             user.summary = data["summary"]
         db.commit()
 
-    return {"message": "Identity hub synchronized successfully", "id": resume.id}
+    def safe_json_load(val):
+        if not val: return []
+        try:
+            return json.loads(val)
+        except:
+            if isinstance(val, str) and "," in val:
+                return [s.strip() for s in val.split(",")]
+            return [val] if val else []
+
+    return {
+        "id": resume.id,
+        "filename": resume.filename,
+        "full_name": resume.full_name,
+        "email": resume.email,
+        "phone": resume.phone,
+        "location": resume.location,
+        "summary": resume.summary,
+        "skills": safe_json_load(resume.skills),
+        "experience": safe_json_load(resume.experience),
+        "education": safe_json_load(resume.education),
+        "updated_at": resume.updated_at,
+        "message": "Identity hub synchronized successfully"
+    }

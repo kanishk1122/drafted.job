@@ -191,7 +191,7 @@ class JobScoutService:
             api_key=settings.NVIDIA_API_KEY
         ) if settings.NVIDIA_API_KEY else None
 
-    async def _score_job_with_ai(self, job_title: str, job_description: str, user_skills: str, target_role: str) -> dict:
+    async def _score_job_with_ai(self, job_title: str, job_description: str, user_skills: str, target_role: str, summary: str = "", experience: str = "") -> dict:
         # Preparation for fallback
         def _get_keyword_score():
             skills_list = [s.strip().lower() for s in user_skills.split(",")]
@@ -203,12 +203,24 @@ class JobScoutService:
         if not self.nim_client:
             return _get_keyword_score()
 
-        prompt = f"""Match Job for Role: {target_role}
+        prompt = f"""Assess Job Alignment for Candidate:
+Target Role: {target_role}
+Candidate Summary: {summary}
 Candidate Skills: {user_skills}
+Candidate Experience: {experience[:1500]}
+
 Job Title: {job_title}
-Role Description: {job_description[:1500]}
+Job Description: {job_description[:2000]}
+
 Scoring Rule: Respond ONLY with valid JSON.
-Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
+Format: {{
+  "score": 0-100, 
+  "reason": "reasoning", 
+  "skip": boolean,
+  "salary": "range or 'Not specified'",
+  "currency": "USD/INR/EUR etc.",
+  "tech_stack": ["skill1", "skill2"]
+}}
 """
         try:
             # 30s timeout + Fallback logic
@@ -228,15 +240,49 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
             fallback["reason"] = f"AI Timeout ({msg}). Fallback: {fallback['reason']}"
             return fallback
 
-    async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db) -> AsyncGenerator[str, None]:
+    async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db, summary: str = "", experience: str = "") -> AsyncGenerator[str, None]:
         from app.modules.job.model import JobRepository, JobStatus
         from app.modules.browser.session_model import ScoutSession
 
-        scout_session = ScoutSession(user_id=user_id, name=f"{target_role} · {platform}", target_role=target_role, location=location, platform=platform, status="running", total_jobs=0, breakdown=[])
-        db.add(scout_session); db.commit(); db.refresh(scout_session)
-        session_id = scout_session.id
+        scout_session = None
+        import uuid
+        task_nonce = str(uuid.uuid4())
 
-        yield json.dumps({"type": "thinking", "message": f"🚀 Session #{session_id} started..."})
+        # Industrial Persistence Pulse: Enforce strictly ONE active mission by hijacking the current running session
+        scout_session = db.query(ScoutSession).filter(
+            ScoutSession.user_id == user_id, 
+            ScoutSession.status == "running"
+        ).first()
+
+        if scout_session:
+            # Tactical Intent Preservation: Don't overwrite with empty mission directives
+            target_role = target_role or scout_session.target_role
+            location = location or scout_session.location
+            
+            yield json.dumps({"type": "thinking", "message": f"🔄 Hijacking Active Mission Context #{scout_session.id} for resumed tactical vector..."})
+            scout_session.name = f"{target_role} · {platform}"
+            scout_session.target_role = target_role
+            scout_session.location = location
+            scout_session.platform = platform
+            scout_session.current_task_id = task_nonce
+            db.commit()
+        else:
+            # ... (creating new session as before)
+            scout_session = ScoutSession(
+                user_id=user_id, 
+                name=f"{target_role} · {platform}", 
+                target_role=target_role, 
+                location=location, 
+                platform=platform, 
+                status="running", 
+                current_task_id=task_nonce,
+                total_jobs=0, 
+                breakdown=[]
+            )
+            db.add(scout_session); db.commit(); db.refresh(scout_session)
+            yield json.dumps({"type": "thinking", "message": f"🚀 Tactical Mission #{scout_session.id} initiated."})
+
+        session_id = scout_session.id
         
         # Diagnostic Log: Model Awareness
         model_name = settings.MODEL_NAME
@@ -332,7 +378,21 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                         yield json.dumps({"type": "thinking", "message": f"📊 Mission Scope: {MAX_PAGES} pages found. Scanning entire pipeline..."})
                 except: pass
 
+            async def _check_mission_integrity():
+                """High-fidelity status pulse to ensure current mission hasn't been hijacked or stopped."""
+                db.expire_all() # Ensure we get fresh tactical data from the vault
+                fresh_session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
+                if not fresh_session or fresh_session.status != "running":
+                    print(f"🛑 Mission #{session_id} not active. Aborting task.")
+                    return False
+                if fresh_session.current_task_id != task_nonce:
+                    print(f"🛑 Mission #{session_id} hijacking detected! New task started. Terminating ghost mission.")
+                    return False
+                return True
+
             while current_page <= MAX_PAGES:
+                if not await _check_mission_integrity(): break
+
                 if current_page > 1:
                     yield json.dumps({"type": "thinking", "message": f"⏭️ Page {current_page-1} of {MAX_PAGES} complete. Navigating..."})
                     
@@ -365,6 +425,8 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                     yield json.dumps({"type": "thinking", "message": f"✅ Found {len(job_ids)} new jobs on Page {current_page}."})
 
                 for i, job_id in enumerate(job_ids[:25]):
+                    if not await _check_mission_integrity(): break
+                    
                     try:
                         # 2. Re-find card by ID inside the loop (Resilience)
                         id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], .job_{job_id}"
@@ -404,8 +466,11 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                         if not job_desc: job_desc = f"{title} at {company} in {loc}"
                         yield json.dumps({"type": "thinking", "message": "🤖 AI is evaluating alignment with your profile..."})
                         
-                        res = await self._score_job_with_ai(title, job_desc, skills, target_role)
+                        res = await self._score_job_with_ai(title, job_desc, skills, target_role, summary, experience)
                         reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
+                        extracted_salary = res.get("salary", "Not specified")
+                        extracted_currency = res.get("currency", "N/A")
+                        extracted_tech = json.dumps(res.get("tech_stack", []))
 
                         yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
 
@@ -418,7 +483,21 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                         if db.query(JobRepository).filter(JobRepository.url == link).first():
                             yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
 
-                        job = JobRepository(user_id=user_id, title=title, company=company, location=loc, url=link, platform=platform, heuristic_score=score, match_reason=reason, status=JobStatus.NEW)
+                        job = JobRepository(
+                            user_id=user_id, 
+                            title=title, 
+                            company=company, 
+                            location=loc, 
+                            url=link, 
+                            platform=platform, 
+                            description=job_desc,
+                            salary=extracted_salary, 
+                            currency=extracted_currency,
+                            tech_stack=extracted_tech, 
+                            heuristic_score=score, 
+                            match_reason=reason, 
+                            status=JobStatus.NEW
+                        )
                         db.add(job); db.commit(); db.refresh(job); saved_count += 1
                         yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
 
@@ -445,6 +524,7 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
                     session.total_jobs = saved_count
                     session.breakdown = final_breakdown
                     db.commit()
+                print(f"✅ Mission resource recovery pulse: Session #{session_id} cleaned up.")
             except Exception as commit_err:
                 print(f"Failed to commit final session stats: {commit_err}")
 

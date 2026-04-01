@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { User, Mail, MapPin, Phone, Orbit, Pencil, Check, X } from "lucide-react";
+import { createAvatar } from '@dicebear/core';
+import { notionists } from '@dicebear/collection';
 import { Card } from "@/components/ui/card";
 import { ResumeData } from "@/lib/services/resume-service";
 import { UserContext } from "@/lib/services/user-service";
@@ -16,12 +18,36 @@ interface ProfileHeaderProps {
 export function ProfileHeader({ resume, context }: ProfileHeaderProps) {
   const dispatch = useAppDispatch();
   const [isEditing, setIsEditing] = useState(false);
+  const [avatarSvg, setAvatarSvg] = useState("");
   const [formData, setFormData] = useState({
-    full_name: resume?.full_name || context?.full_name || "",
-    email: resume?.email || context?.email || "",
-    location: resume?.location || "",
-    phone: resume?.phone || ""
+    full_name: "",
+    email: "",
+    location: "",
+    phone: ""
   });
+
+  // Industrial Persona Pulse: Dynamic Dynamic Identity Refinement
+  React.useEffect(() => {
+    const fullName = resume?.full_name || context?.full_name || "";
+    const userEmail = resume?.email || context?.email || "";
+    
+    // @ts-ignore
+    const avatar = createAvatar(notionists, {
+      "seed": fullName || userEmail || "professional",
+      "radius": 10,
+    });
+    setAvatarSvg(avatar.toString());
+  }, [resume?.full_name, resume?.email, context?.full_name, context?.email]);
+
+  // Industrial Sync: Preload form with mission data when it stabilizes
+  React.useEffect(() => {
+    setFormData({
+      full_name: resume?.full_name || context?.full_name || "",
+      email: resume?.email || context?.email || "",
+      location: resume?.location || "",
+      phone: resume?.phone || ""
+    });
+  }, [resume, context]);
 
   const handleSave = async () => {
     if (!context?.id) return;
@@ -43,8 +69,8 @@ export function ProfileHeader({ resume, context }: ProfileHeaderProps) {
 
       <div className="relative z-10 space-y-6">
         <div className="flex justify-between items-start">
-          <div className="w-24 h-24 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center shadow-2xl shadow-primary/20">
-            <User size={48} className="text-primary" />
+          <div className="size-20 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center shadow-2xl shadow-primary/20 overflow-hidden">
+            <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: avatarSvg }} />
           </div>
           <button 
             onClick={() => setIsEditing(!isEditing)}

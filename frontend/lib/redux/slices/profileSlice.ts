@@ -9,6 +9,15 @@ export const fetchProfile = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { profile } = getState() as any;
+      if (profile.context && !profile.error) {
+        return false;
+      }
+      return true;
+    }
   }
 );
 

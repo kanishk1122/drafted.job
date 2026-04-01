@@ -1,61 +1,49 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import BoardColumn from "@/components/board/BoardColumn";
-import { savedJobs as initialJobs } from "@/components/vault/mockData";
 import { Job } from "@/components/vault/types";
 import { LayoutGrid, Share2, Filter, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-   DndContext,
-   DragOverlay,
-   closestCorners,
-   KeyboardSensor,
-   PointerSensor,
-   useSensor,
-   useSensors,
-   DragStartEvent,
-   DragOverEvent,
-   DragEndEvent,
-} from "@dnd-kit/core";
-import {
-   arrayMove,
-   sortableKeyboardCoordinates,
-} from "@dnd-kit/sortable";
-import BoardCard from "@/components/board/BoardCard";
+import { DragDropContext, DropResult, DragUpdate } from "@hello-pangea/dnd";
 import { toast } from "sonner";
+import { useAppDispatch, useAppSelector } from "@/lib/redux/store";
+import { fetchJobs, updateJobStatus } from "@/lib/redux/slices/jobSlice";
+import { JobSummary } from "@/lib/services/job-service";
 
 const columns = [
-   { id: "Drafted", title: "DRAFTED", color: "bg-blue-500" },
-   { id: "Applied", title: "APPLIED", color: "bg-yellow-500" },
-   { id: "Interview", title: "INTERVIEWS", color: "bg-purple-500" },
-   { id: "Offer", title: "OFFERS", color: "bg-green-500" },
-   { id: "Rejected", title: "REJECTED", color: "bg-red-500" }
+   { id: "new", title: "DRAFTED", color: "bg-blue-500" },
+   { id: "applied", title: "APPLIED", color: "bg-yellow-500" },
+   { id: "interview", title: "INTERVIEWS", color: "bg-purple-500" },
+   { id: "offer", title: "OFFERS", color: "bg-green-500" },
+   { id: "rejected", title: "REJECTED", color: "bg-red-500" }
 ];
 
+// Redux handles data normalization and caching via jobSlice.ts
+
 export default function BoardPage() {
-   const [jobs, setJobs] = useState<Job[]>(initialJobs);
-   const [activeId, setActiveId] = useState<number | null>(null);
+   const dispatch = useAppDispatch();
+   const { jobs, loading } = useAppSelector((state) => state.job);
    const [searchQuery, setSearchQuery] = useState("");
    const [showSearch, setShowSearch] = useState(false);
 
-   const sensors = useSensors(
-      useSensor(PointerSensor, {
-         activationConstraint: {
-            distance: 8,
-         },
-      }),
-      useSensor(KeyboardSensor, {
-         coordinateGetter: sortableKeyboardCoordinates,
-      })
-   );
+   // Custom horizontal auto-scroll refs
+   const scrollRef = useRef<HTMLDivElement>(null);
+   const rafRef = useRef<number | null>(null);
 
-   const findColumn = (id: string | number) => {
-      if (typeof id === 'string') return id;
-      const job = jobs.find(j => j.id === id);
-      return job ? job.status : null;
-   };
+   // Track cursor X globally so RAF loop can read it
+   useEffect(() => {
+      const track = (e: MouseEvent) => { (window as any).__dragX = e.clientX; };
+      window.addEventListener("mousemove", track);
+      return () => window.removeEventListener("mousemove", track);
+   }, []);
+
+   useEffect(() => {
+     // Fetch all available missions for global pipeline visibility
+     // condition in fetchJobs handles caching automatically
+     dispatch(fetchJobs({ limit: 1000 }));
+   }, [dispatch]);
 
    const handleShareStatus = () => {
       const summary = jobs.map(j => `${j.title} @ ${j.company} [${j.status}]`).join('\n');
@@ -71,42 +59,60 @@ export default function BoardPage() {
       });
    };
 
-   const handleDragStart = (event: DragStartEvent) => {
-      setActiveId(event.active.id as number);
-   };
+   // Custom edge-detection auto-scroll — @hello-pangea/dnd only scrolls window, not custom containers
+   const onDragUpdate = useCallback((update: DragUpdate) => {
+      if (!update.destination) return;
+      const container = scrollRef.current;
+      if (!container) return;
 
-   const handleDragOver = (event: DragOverEvent) => {
-      const { active, over } = event;
-      if (!over) return;
+      const EDGE_ZONE = 120;  // px from edge to trigger scroll
+      const SCROLL_SPEED = 12; // px per frame
 
-      const activeId = active.id as number;
-      const overId = over.id;
+      const cancelScroll = () => {
+         if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+         }
+      };
 
-      const activeColumn = findColumn(activeId);
-      const overColumn = findColumn(overId);
+      const autoScroll = () => {
+         const rect = container.getBoundingClientRect();
+         const x = (window as any).__dragX ?? 0;
+         const distFromRight = rect.right - x;
+         const distFromLeft = x - rect.left;
 
-      if (!activeColumn || !overColumn || activeColumn === overColumn) return;
+         if (distFromRight < EDGE_ZONE) {
+            container.scrollLeft += SCROLL_SPEED;
+            // Notify @hello-pangea/dnd to recalculate droppable positions
+            container.dispatchEvent(new Event('scroll'));
+         } else if (distFromLeft < EDGE_ZONE) {
+            container.scrollLeft -= SCROLL_SPEED;
+            container.dispatchEvent(new Event('scroll'));
+         }
 
-      setJobs((prev) => {
-         const activeIndex = prev.findIndex(i => i.id === activeId);
-         const newJobs = [...prev];
-         newJobs[activeIndex] = { ...newJobs[activeIndex], status: overColumn };
-         return newJobs;
-      });
-   };
+         cancelScroll();
+         rafRef.current = requestAnimationFrame(autoScroll);
+      };
+      
+      autoScroll();
+   }, []);
 
-   const handleDragEnd = (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over) return;
-
-      if (active.id !== over.id) {
-         setJobs((prev) => {
-            const oldIndex = prev.findIndex(i => i.id === active.id);
-            const newIndex = prev.findIndex(i => i.id === over.id);
-            return arrayMove(prev, oldIndex, newIndex);
-         });
+   const onDragEnd = (result: DropResult) => {
+      if (rafRef.current) {
+         cancelAnimationFrame(rafRef.current);
+         rafRef.current = null;
       }
-      setActiveId(null);
+
+      const { source, destination, draggableId } = result;
+
+      if (!destination) return;
+      if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+      const activeId = parseInt(draggableId);
+      const destStatus = destination.droppableId;
+
+      // Update globally via Redux + Backend sync
+      dispatch(updateJobStatus({ jobId: activeId, status: destStatus }));
    };
 
    const filteredJobs = useMemo(() => jobs.filter(job => 
@@ -116,13 +122,13 @@ export default function BoardPage() {
 
    // PERFORMANCE FIX: Single-pass mapping
    const jobsByStatus = useMemo(() => {
-      const acc: Record<string, Job[]> = columns.reduce((map, col) => {
+      const acc: Record<string, any[]> = columns.reduce((map, col) => {
          map[col.id] = [];
          return map;
-      }, {} as Record<string, Job[]>);
+      }, {} as Record<string, any[]>);
 
       filteredJobs.forEach(job => {
-         const matchingCol = columns.find(c => job.status.toLowerCase().includes(c.id.toLowerCase()));
+         const matchingCol = columns.find(c => job.status?.toLowerCase().includes(c.id.toLowerCase()));
          if (matchingCol && acc[matchingCol.id]) {
             acc[matchingCol.id].push(job);
          }
@@ -130,8 +136,6 @@ export default function BoardPage() {
 
       return acc;
    }, [filteredJobs]);
-
-   const activeJob = activeId ? jobs.find(j => j.id === activeId) : null;
 
    return (
       <DashboardLayout>
@@ -179,21 +183,15 @@ export default function BoardPage() {
                </div>
             </div>
 
-            {/* Pipeline Workspace */}
-            <DndContext
-               sensors={sensors}
-               collisionDetection={closestCorners}
-               onDragStart={handleDragStart}
-               onDragOver={handleDragOver}
-               onDragEnd={handleDragEnd}
-               autoScroll
-            >
-               <div className="flex-1 min-h-0 relative group/board">
-                  <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none opacity-0 group-hover/board:opacity-100 transition-opacity" />
-                  <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none opacity-0 group-hover/board:opacity-100 transition-opacity" />
-                  
-                  <div className="h-full overflow-x-auto no-scrollbar pb-8 pt-4">
-                     <div className="flex gap-8 h-full px-8 min-w-max">
+            {loading ? (
+               <div className="flex-1 flex items-center justify-center">
+                   <div className="h-12 w-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+               </div>
+            ) : (
+               /* Pipeline Discovery Hub - Custom horizontal auto-scroll */
+               <DragDropContext onDragEnd={onDragEnd} onDragUpdate={onDragUpdate}>
+                  <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-hidden pb-12 pt-8 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-primary/10 select-none">
+                     <div className="flex gap-10 h-full min-w-max px-10">
                         {columns.map((col) => (
                            <BoardColumn
                               key={col.id}
@@ -205,16 +203,8 @@ export default function BoardPage() {
                         ))}
                      </div>
                   </div>
-               </div>
-
-               <DragOverlay>
-                  {activeJob ? (
-                     <div className="opacity-80 scale-105 rotate-2 transition-transform cursor-grabbing">
-                        <BoardCard job={activeJob} />
-                     </div>
-                  ) : null}
-               </DragOverlay>
-            </DndContext>
+               </DragDropContext>
+            )}
          </div>
       </DashboardLayout>
    );

@@ -41,6 +41,36 @@ class AIService:
             print(f"Error calling NVIDIA NIM: {e}")
             return self._mock_extraction(user_message)
 
+    async def refine_search_query(self, user_query: str, skills: str, experience_text: str):
+        if not self.client:
+            return user_query
+
+        prompt = f"""
+        Optimize this job search query for platforms like LinkedIn/Indeed.
+        User Intent: "{user_query}"
+        Candidate Skills: {skills[:500]}
+        Candidate Experience Summary: {experience_text[:500]}
+        
+        Rules:
+        - KEEP the core role EXACTLY as provided in User Intent. (DO NOT ADD Senior, Junior, or other seniority/experience levels if they are not in the User Intent).
+        - Enhancethis by adding ONLY 2-3 most relevant technical keywords from the Candidate Skills.
+        - Return a concise 3-5 word search string.
+        - Return ONLY the optimized string. No quotes, no intro.
+        """
+
+        try:
+            completion = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=64,
+                timeout=10.0
+            )
+            return completion.choices[0].message.content.strip().replace('"', '')
+        except Exception as e:
+            print(f"Error refining search query: {e}")
+            return user_query
+
     async def parse_resume(self, resume_text: str):
         if not self.client:
             return self._mock_resume_parsing(resume_text)

@@ -4,12 +4,15 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 class JobStatus(str, Enum):
-    NEW = "New"
-    SAVED = "Saved"
-    APPLIED = "Applied"
-    IGNORED = "Ignored"
-    INTERVIEW = "Interview"
-    OFFER = "Offer"
+    NEW = "new"
+    POTENTIAL = "potential"
+    CANDIDATE = "candidate"
+    APPLIED = "applied"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    SAVED = "saved"
+    IGNORED = "ignored"
 
 class JobRepository(Base):
     __tablename__ = "job_repository"
@@ -23,6 +26,8 @@ class JobRepository(Base):
     url = Column(String(1000), unique=True, index=True)
     platform = Column(String(50))
     salary = Column(String(100))
+    currency = Column(String(20)) # e.g. USD, INR
+    tech_stack = Column(Text) # JSON serialized list of skills
     
     # Heuristic match fields
     heuristic_score = Column(Integer, default=0)

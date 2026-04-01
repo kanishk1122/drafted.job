@@ -17,4 +17,6 @@ class ScoutSession(Base):
     total_jobs = Column(Integer, default=0)
     # JSON array: [{"platform": "LinkedIn", "logo": "...", "count": 5}]
     breakdown = Column(JSON, default=list)
+    # Industrial Synchronization Pulse: Unique ID for the active Python task
+    current_task_id = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

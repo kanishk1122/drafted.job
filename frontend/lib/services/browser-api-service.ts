@@ -23,6 +23,12 @@ class BrowserApiService extends ApiService {
       method: "POST",
     });
   }
+
+  async deleteSession(sessionId: number | string, userId: string): Promise<{success: boolean}> {
+    return this.request<{success: boolean}>(`/browser/sessions/${sessionId}?user_id=${userId}`, {
+      method: "DELETE",
+    });
+  }
 }
 
 export const browserApiService = new BrowserApiService();

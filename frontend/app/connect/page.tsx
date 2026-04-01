@@ -201,7 +201,7 @@ export default function ConnectPage() {
                 <h3 className="text-sm font-black uppercase tracking-tight">Active Automation Pool</h3>
                 <p className="text-[11px] md:text-xs text-muted-foreground font-medium max-w-2xl">
                     Your account is currently managing <strong>1 isolated Chrome profile</strong>. 
-                    Platform credentials remain sandboxed on your backend server.
+                    Platform credentials remain sandboxed on your Device.
                 </p>
             </div>
             

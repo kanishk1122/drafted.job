@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 import os
 import asyncio
@@ -93,29 +93,71 @@ async def check_session(user_id: str, platform: str, db: Session = Depends(get_d
 from sse_starlette.sse import EventSourceResponse
 from app.modules.browser.scout import job_scout_service
 
-async def _scout_generator(user_email: str, platform: str, target_role: str, location: str, db: Session):
+async def _scout_generator(request: Request, user_email: str, platform: str, target_role: str, location: str, db: Session):
     from app.modules.user.model import UserContext
     user = db.query(UserContext).filter(UserContext.email == user_email).first()
     if not user:
         yield {"data": '{"type": "error", "message": "User not found"}'}
         return
 
-    skills = user.skills or target_role
+    from app.modules.resume.model import Resume
+    import json
+
+    resume = db.query(Resume).filter(Resume.user_id == user.id).order_by(Resume.created_at.desc()).first()
+    
+    # Industrial Identity Pivot: Prefer Resume data over generic user data
+    skills = ""
+    summary = ""
+    experience_text = ""
+    
+    if resume:
+        # Skills
+        if resume.skills:
+            try:
+                skills_list = json.loads(resume.skills)
+                skills = ", ".join(skills_list)
+            except:
+                skills = str(resume.skills)
+        
+        # Summary
+        summary = resume.summary or ""
+        
+        # Experience (Stringify the list)
+        if resume.experience:
+            try:
+                exp_list = json.loads(resume.experience)
+                experience_text = "\n".join([f"{e.get('role')} at {e.get('company')}: {e.get('description')}" for e in exp_list])
+            except:
+                experience_text = str(resume.experience)
+    else:
+        skills = user.skills or target_role
+
+    # Industrial Neural Step: Perfect the search query based on professional narrative
+    from app.modules.ai.service import ai_service
+    yield json.dumps({"type": "thinking", "message": f"🧠 AI is distilling mission intent from profile data..."})
+    refined_query = await ai_service.refine_search_query(target_role, skills, experience_text)
+    yield json.dumps({"type": "thinking", "message": f"🎯 Search Directive Refined: '{refined_query}'"})
 
     async for event_data in job_scout_service.run_search(
         user_id=user.id,
         user_email=user_email,
         platform=platform,
-        target_role=target_role,
+        target_role=refined_query, # Use the high-fidelity AI-refined query
         location=location,
         skills=skills,
         db=db,
+        summary=summary,
+        experience=experience_text
     ):
+        if await request.is_disconnected():
+            print(f"🛑 Client disconnected. Aborting session for {user_email}")
+            break
         yield {"data": event_data}
         await asyncio.sleep(0)
 
 @router.get("/scout")
 async def scout_jobs(
+    request: Request,
     user_id: str,
     platform: str,
     target_role: str,
@@ -125,4 +167,24 @@ async def scout_jobs(
     """
     SSE stream: Real-time AI thoughts + job matches scraped from local Chrome.
     """
-    return EventSourceResponse(_scout_generator(user_id, platform, target_role, location, db))
+    return EventSourceResponse(_scout_generator(request, user_id, platform, target_role, location, db))
+
+@router.delete("/sessions/{session_id}")
+async def delete_scout_session(session_id: int, user_id: str, db: Session = Depends(get_db)):
+    """Remove a scout session from history. Optimized to return minimal success flag."""
+    from app.modules.user.model import UserContext
+    from app.modules.browser.session_model import ScoutSession
+
+    user = db.query(UserContext).filter(UserContext.email == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    session = db.query(ScoutSession).filter(ScoutSession.id == session_id, ScoutSession.user_id == user.id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session records not found or mission already purged")
+
+    db.delete(session)
+    db.commit()
+    
+    return {"success": True}
+

@@ -21,6 +21,15 @@ export const fetchDashboardStats = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(error.message);
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { pipeline } = getState() as any;
+      if (pipeline.stats && !pipeline.error) {
+        return false;
+      }
+      return true;
+    }
   }
 );
 

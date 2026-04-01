@@ -1,27 +1,58 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.job.service import job_service
 from app.modules.job.model import JobStatus
-from app.modules.job.schema import JobSchema, JobMetricsSchema
+from app.modules.job.schema import JobSchema, JobSummarySchema, JobMetricsSchema, JobCreateSchema
 from app.modules.user.model import UserContext
 from typing import List, Optional
 
 router = APIRouter()
 
-@router.get("/", response_model=List[JobSchema])
+@router.get("/", response_model=List[JobSummarySchema])
 def list_jobs(
     status: Optional[JobStatus] = None, 
+    platform: Optional[str] = None,
+    min_score: int = 0,
+    sort_by: str = "newest",
     limit: int = 50, 
     offset: int = 0, 
     db: Session = Depends(get_db),
     current_user: UserContext = Depends(get_current_user)
 ):
     """
-    Retrieve professional job vault with performance sorting and user-context isolation.
+    Retrieve lightweight job summaries for list/kanban views.
+    Only returns essential fields — no description, tech_stack, or match_reason.
     """
-    return job_service.list_jobs(db, current_user.id, status, limit, offset)
+    return job_service.list_jobs(db, current_user.id, status, platform, min_score, sort_by, limit, offset)
+
+@router.post("/", response_model=JobSchema)
+def create_manual_job(
+    job_data: JobCreateSchema,
+    db: Session = Depends(get_db),
+    current_user: UserContext = Depends(get_current_user)
+):
+    """
+    Manually inject a mission-critical position into the private vault.
+    Allows for high-fidelity tracking of non-automated scouting results.
+    """
+    return job_service.create_manual_job(db, current_user.id, job_data)
+
+@router.get("/{job_id}", response_model=JobSchema)
+def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserContext = Depends(get_current_user)
+):
+    """
+    Retrieve complete job details for a specific position.
+    Called when user selects a job from the list.
+    """
+    job = job_service.get_job_by_id(db, current_user.id, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 @router.patch("/{job_id}/status")
 def update_job_status(

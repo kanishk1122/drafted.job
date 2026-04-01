@@ -5,7 +5,7 @@ import { Briefcase, HelpCircle, Zap, Globe } from "lucide-react";
 
 export default function VaultHeader() {
    return (
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 ">
          <div className="space-y-4 relative group/help-root">
             <h1 className="text-3xl sm:text-5xl font-black tracking-tighter uppercase text-foreground flex items-center gap-4">
                Job Vault <Briefcase className="text-primary h-8 w-8 sm:h-12 sm:w-12" />

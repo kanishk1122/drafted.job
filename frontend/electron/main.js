@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const os = require('os');
@@ -94,6 +94,14 @@ ipcMain.handle('launch-chrome-debug', async (event, { userId }) => {
 
   console.log(`✅ Chrome launched at port 9223, profile: ${profileDir}`);
   return { success: true, profile: profileDir };
+});
+
+ipcMain.handle('open-external-browser', async (event, url) => {
+  console.log(`🌍 Opening external link: ${url}`);
+  if (url) {
+    shell.openExternal(url);
+  }
+  return { success: true };
 });
 
 app.whenReady().then(() => {

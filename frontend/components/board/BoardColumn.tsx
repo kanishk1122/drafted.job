@@ -1,23 +1,20 @@
 import React, { memo } from "react";
-import { Job } from "@/components/vault/types";
+import { JobSummary } from "@/lib/services/job-service";
 import BoardCard from "./BoardCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { Droppable } from "@hello-pangea/dnd";
 
 interface BoardColumnProps {
    id: string;
    title: string;
-   jobs: Job[];
+   jobs: JobSummary[];
    color: string;
 }
 
 const BoardColumn = memo(({ id, title, jobs, color }: BoardColumnProps) => {
-   const { setNodeRef } = useDroppable({ id });
-
    return (
-      <div ref={setNodeRef} className="w-[280px] sm:w-[320px] shrink-0 flex flex-col h-full rounded-3xl bg-card/15 border-2 border-border/10 relative group/column hover:border-border/30 transition-all duration-500 shadow-2xl">
+      <div className="w-[280px] sm:w-[320px] shrink-0 flex flex-col h-full rounded-3xl bg-card/15 border-2 border-border/10 relative group/column hover:border-border/30 transition-all duration-500 shadow-2xl">
          {/* Column Header */}
          <div className="p-6 border-b border-border/20 bg-muted/10 shrink-0">
             <div className="flex items-center justify-between gap-3">
@@ -33,20 +30,31 @@ const BoardColumn = memo(({ id, title, jobs, color }: BoardColumnProps) => {
             </div>
          </div>
 
-         {/* Job Cards Area */}
-         <ScrollArea className="flex-1 no-scrollbar h-full">
-            <div className="space-y-4 pb-24 mt-2 px-6 py-4">
-               <SortableContext id={id} items={jobs.map(j => j.id)} strategy={verticalListSortingStrategy}>
-                  {jobs.length > 0 ? (
-                     jobs.map((job) => <BoardCard key={job.id} job={job} />)
-                  ) : (
-                     <div className="flex-1 h-[200px] border-2 border-dashed border-border/20 rounded-2xl flex items-center justify-center p-8 text-center bg-muted/5">
-                        <p className="text-[9px] font-black text-muted-foreground/30 uppercase tracking-[0.25em]">No Intelligence Detected In This Sector</p>
-                     </div>
-                  )}
-               </SortableContext>
-            </div>
-         </ScrollArea>
+         {/* Job Cards Area - NATIVE SCROLL for @hello-pangea/dnd Auto-scroll support */}
+         <div className="flex-1 overflow-y-auto no-scrollbar h-full">
+            <Droppable droppableId={id} ignoreContainerClipping>
+               {(provided, snapshot) => (
+                  <div
+                     ref={provided.innerRef}
+                     {...provided.droppableProps}
+                     className={`space-y-4 pb-24 mt-2 px-6 py-4 min-h-[150px] transition-colors duration-200 ${
+                        snapshot.isDraggingOver ? "bg-primary/5" : ""
+                     }`}
+                  >
+                     {jobs.length > 0 ? (
+                        jobs.map((job, index) => (
+                           <BoardCard key={job.id} job={job} index={index} />
+                        ))
+                     ) : (
+                        <div className="flex-1 h-[200px] border-2 border-dashed border-border/20 rounded-2xl flex items-center justify-center p-8 text-center bg-muted/5">
+                           <p className="text-[9px] font-black text-muted-foreground/30 uppercase tracking-[0.25em]">No Intelligence Detected In This Sector</p>
+                        </div>
+                     )}
+                     {provided.placeholder}
+                  </div>
+               )}
+            </Droppable>
+         </div>
 
          {/* Bottom Aura Effect */}
          <div className={`absolute bottom-0 inset-x-0 h-2 bg-gradient-to-t ${color} opacity-5 group-hover/column:opacity-20 blur-xl transition-opacity pointer-events-none`} />

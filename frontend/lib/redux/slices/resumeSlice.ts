@@ -9,6 +9,16 @@ export const fetchMyResume = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
+  },
+  {
+    // Caching logic: don't fetch if we already have it
+    condition: (userId, { getState }) => {
+      const { resume } = getState() as any;
+      if (resume.data && resume.status === 'succeeded') {
+        return false;
+      }
+      return true;
+    }
   }
 );
 
@@ -74,18 +84,19 @@ const resumeSlice = createSlice({
       })
       .addCase(uploadUserResume.fulfilled, (state, action) => {
         state.uploadStatus = 'succeeded';
-        state.data = action.payload.professional_data;
+        state.data = {
+          ...action.payload,
+          ...action.payload.professional_data
+        };
+        state.status = 'succeeded';
       })
       .addCase(uploadUserResume.rejected, (state, action) => {
         state.uploadStatus = 'failed';
         state.error = action.payload as string;
       })
       .addCase(updateResume.fulfilled, (state, action) => {
-        if (state.data) {
-          // Re-fetch or merge logic could go here, but for simplicity we assume the caller will trigger a re-fetch
-          // or we can update the specific fields if the response returns the full object.
-          // Since our backend returns a message, we'll let the component re-fetch.
-        }
+        state.data = action.payload;
+        state.status = 'succeeded';
       });
   },
 });

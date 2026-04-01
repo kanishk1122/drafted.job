@@ -4,6 +4,8 @@ import authReducer from './slices/authSlice';
 import pipelineReducer from './slices/pipelineSlice';
 import profileReducer from './slices/profileSlice';
 import resumeReducer from './slices/resumeSlice';
+import jobReducer from './slices/jobSlice';
+import browserReducer from './slices/browserSlice';
 
 export const store = configureStore({
   reducer: {
@@ -11,6 +13,8 @@ export const store = configureStore({
     pipeline: pipelineReducer,
     profile: profileReducer,
     resume: resumeReducer,
+    job: jobReducer,
+    browser: browserReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

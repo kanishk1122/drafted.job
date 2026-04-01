@@ -12,7 +12,7 @@ import { History } from "lucide-react";
 export interface SearchSession {
   id: number | string;
   name: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "active" | "idle";
   error?: string;
   date: string;
   totalJobs: number;
@@ -43,13 +43,26 @@ export function SessionItem({ session, onRestart, onDelete }: { session: SearchS
                 <h4 className="text-[12px] font-black text-foreground uppercase tracking-widest truncate group-hover:text-primary transition-colors">
                   {session.name}
                 </h4>
-                {session.status === "completed" ? (
+                {session.status === "active" ? (
+                  <RotateCcw size={10} className="text-primary animate-spin" />
+                ) : session.status === "completed" ? (
                   <CheckCircle2 size={10} className="text-green-500 opacity-60" />
                 ) : (
-                  <AlertCircle size={10} className="text-red-500 opacity-60" />
+                  <AlertCircle size={10} className={`text-red-500 opacity-60 ${session.status === 'idle' ? 'text-muted-foreground' : ''}`} />
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <Badge
+                   variant="outline"
+                   className={cn(
+                     "text-[7px] h-3.5 font-black uppercase tracking-widest px-1 border-none",
+                     session.status === 'active' ? "bg-primary/10 text-primary animate-pulse" :
+                     session.status === 'completed' ? "bg-green-500/10 text-green-500" :
+                     session.status === 'idle' ? "bg-muted text-muted-foreground" : "bg-red-500/10 text-red-500"
+                   )}
+                >
+                   {session.status}
+                </Badge>
                 <p className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">
                   {session.date}
                 </p>

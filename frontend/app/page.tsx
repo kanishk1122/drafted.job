@@ -9,11 +9,20 @@ import {
   Cpu, 
   Layers, 
   MessageSquare,
-  ArrowUpRight
+  ArrowUpRight,
+  Terminal,
+  ExternalLink,
+  Briefcase
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { useAppDispatch, useAppSelector } from "@/lib/redux/store";
+import { fetchJobs, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
+import { useEffect } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 // Components
@@ -23,6 +32,30 @@ import { InsightsGrid } from "@/components/dashboard/InsightsGrid";
 import { ApplicationTable } from "@/components/dashboard/ApplicationTable";
 
 export default function DashboardPage() {
+  const dispatch = useAppDispatch();
+
+  const handleRescan = () => {
+    // Explicitly bypass caching by triggering the thunks (they only skip if condition returns false)
+    // To force we could reset state or just trust the fetch for now as 'manual'
+    dispatch(fetchJobMetrics());
+    dispatch(fetchJobs({ limit: 10, sort_by: "newest" }));
+  };
+
+  useEffect(() => {
+     // Bootstrap global telemetry and recent mission history
+     // Both utilize Redux caching 'condition' blocks to skip unnecessary network traffic
+     const bootstrapDashboard = async () => {
+        await Promise.all([
+           dispatch(fetchJobMetrics()),
+           dispatch(fetchJobs({ limit: 10, sort_by: "newest" }))
+        ]);
+     };
+
+     bootstrapDashboard();
+  }, [dispatch]);
+
+  const { metrics } = useAppSelector((state) => state.job);
+
   return (
     <DashboardLayout>
       {/* Dashboard Header */}
@@ -34,11 +67,15 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex flex-col items-end mr-2">
-             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1">Last Update Scan</span>
-             <span className="text-[10px] font-black text-primary uppercase">04m 12s ago</span>
+          <div className="hidden sm:flex flex-col items-end mr-2 text-right">
+             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1 opacity-60 italic">Telemetry Uplink Active</span>
+             <span className="text-[10px] font-black text-primary uppercase tabular-nums">DATA SYNCED AT {new Date().toLocaleTimeString().split(' ')[0]}</span>
           </div>
-          <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-6 rounded-sm shadow-lg shadow-primary/20 tracking-widest text-[10px] uppercase h-10 group">
+          <Button 
+            onClick={handleRescan}
+            size="sm" 
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-6 rounded-sm shadow-lg shadow-primary/20 tracking-widest text-[10px] uppercase h-10 group"
+          >
              TRIGGER RESCAN <ArrowUpRight size={14} className="ml-2 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </Button>
         </div>

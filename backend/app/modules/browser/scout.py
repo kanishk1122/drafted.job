@@ -302,60 +302,96 @@ Format: {{"score": 0-100, "reason": "reasoning", "skip": boolean}}
             yield json.dumps({"type": "thinking", "message": f"✅ Found {len(job_ids)} jobs. Analyzing top matches..."})
             saved_count = 0
             is_linkedin = (platform.lower() == "linkedin")
+            current_page = 1
+            MAX_PAGES = 5 # Default fallback
 
-            for i, job_id in enumerate(job_ids[:25]):
+            # 1. Dynamically extract total pages from LinkedIn UI if available
+            if is_linkedin:
                 try:
-                    # 2. Re-find card by ID inside the loop (Resilience)
-                    id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}']"
-                    card = await page.query_selector(id_selector)
-                    if not card: continue
+                    page_state_text = await page.inner_text(".jobs-search-pagination__page-state")
+                    import re
+                    match = re.search(r"Page \d+ of (\d+)", page_state_text)
+                    if match:
+                        MAX_PAGES = min(15, int(match.group(1))) # Cap at 15 for safety
+                        yield json.dumps({"type": "thinking", "message": f"📊 Mission Scope: {MAX_PAGES} pages found. Scanning entire pipeline..."})
+                except: pass
 
-                    if is_linkedin:
-                        # 3. Forced Hydration
-                        await card.scroll_into_view_if_needed(timeout=3000)
-                        # Wait for either the title link OR a small timeout
-                        try: await card.wait_for_selector("a.job-card-list__title--link", timeout=2000)
-                        except: pass
+            while current_page <= MAX_PAGES:
+                if current_page > 1:
+                    yield json.dumps({"type": "thinking", "message": f"⏭️ Page {current_page-1} of {MAX_PAGES} complete. Navigating..."})
+                    
+                    # Target the next button from user's HTML
+                    next_btn = await page.query_selector(".jobs-search-pagination__button--next")
+                    if not next_btn: 
+                        yield json.dumps({"type": "thinking", "message": "📍 No more pages found."})
+                        break
+                    
+                    await next_btn.click()
+                    await asyncio.sleep(6.0) # Wait for page load and hydration
+                    
+                    # Re-harvest fresh IDs for the new page
+                    for sel in config.get("job_card_selectors", []):
+                        ids = await page.evaluate(f"(sel) => Array.from(document.querySelectorAll(sel)).map(el => el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id')).filter(id => !!id)", sel)
+                        if ids: job_ids = ids; break
+                    
+                    if not job_ids: break
+                    yield json.dumps({"type": "thinking", "message": f"✅ Found {len(job_ids)} new jobs on Page {current_page}."})
+
+                for i, job_id in enumerate(job_ids[:25]):
+                    try:
+                        # 2. Re-find card by ID inside the loop (Resilience)
+                        id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}']"
+                        card = await page.query_selector(id_selector)
+                        if not card: continue
+
+                        if is_linkedin:
+                            # 3. Forced Hydration
+                            await card.scroll_into_view_if_needed(timeout=3000)
+                            # Wait for either the title link OR a small timeout
+                            try: await card.wait_for_selector("a.job-card-list__title--link", timeout=2000)
+                            except: pass
+                            
+                            data = await _extract_card_data_linkedin(card)
+                        else:
+                            data = await _extract_card_data_generic(card, config, location)
+
+                        title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
                         
-                        data = await _extract_card_data_linkedin(card)
-                    else:
-                        data = await _extract_card_data_generic(card, config, location)
+                        if not title or not link:
+                            yield json.dumps({"type": "thinking", "message": f"⏭️ Skipping card {i+1}: Extraction incomplete (Hydration timeout)"})
+                            continue
 
-                    title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
-                    
-                    if not title or not link:
-                        yield json.dumps({"type": "thinking", "message": f"⏭️ Skipping card {i+1}: Extraction incomplete (Hydration timeout)"})
-                        continue
+                        # Final URL formatting
+                        if is_linkedin:
+                            if job_id and (not link or link.startswith("/")): link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                            elif link.startswith("/"): link = "https://www.linkedin.com" + link
+                        
+                        yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
+                        job_desc = await _get_job_detail_via_panel(page, card, job_id) if is_linkedin else f"{title} at {company} in {loc}"
+                        
+                        if not job_desc: job_desc = f"{title} at {company} in {loc}"
+                        yield json.dumps({"type": "thinking", "message": "🤖 AI is evaluating alignment with your profile..."})
+                        
+                        res = await self._score_job_with_ai(title, job_desc, skills, target_role)
+                        reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
 
-                    # Final URL formatting
-                    if is_linkedin:
-                        if job_id and (not link or link.startswith("/")): link = f"https://www.linkedin.com/jobs/view/{job_id}/"
-                        elif link.startswith("/"): link = "https://www.linkedin.com" + link
-                    
-                    yield json.dumps({"type": "thinking", "message": f"👆 [{i+1}] Processing '{title}' @ {company}..."})
-                    job_desc = await _get_job_detail_via_panel(page, card, job_id) if is_linkedin else f"{title} at {company} in {loc}"
-                    
-                    if not job_desc: job_desc = f"{title} at {company} in {loc}"
-                    yield json.dumps({"type": "thinking", "message": "🤖 AI is evaluating alignment with your profile..."})
-                    
-                    res = await self._score_job_with_ai(title, job_desc, skills, target_role)
-                    reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
+                        yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
 
-                    yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
+                        if score <= 70:
+                            yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
+                            continue
 
-                    if res.get("skip"):
-                        yield json.dumps({"type": "thinking", "message": "⏭️  Decision: Skipping (Low match score)"})
-                        continue
+                        if db.query(JobRepository).filter(JobRepository.url == link).first():
+                            yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
 
-                    if db.query(JobRepository).filter(JobRepository.url == link).first():
-                        yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
+                        job = JobRepository(user_id=user_id, title=title, company=company, location=loc, url=link, platform=platform, heuristic_score=score, match_reason=reason, status=JobStatus.NEW)
+                        db.add(job); db.commit(); db.refresh(job); saved_count += 1
+                        yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
 
-                    job = JobRepository(user_id=user_id, title=title, company=company, location=loc, url=link, platform=platform, heuristic_score=score, match_reason=reason, status=JobStatus.NEW)
-                    db.add(job); db.commit(); db.refresh(job); saved_count += 1
-                    yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
-
-                except Exception as e:
-                    yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
+                    except Exception as e:
+                        yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
+                
+                current_page += 1
 
             breakdown = [{"platform": platform.capitalize(), "logo": f"https://www.google.com/s2/favicons?domain={platform}.com&sz=128", "count": saved_count}]
             db.query(ScoutSession).filter(ScoutSession.id == session_id).update({"status": "completed", "total_jobs": saved_count, "breakdown": breakdown}); db.commit()

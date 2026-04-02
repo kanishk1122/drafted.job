@@ -9,6 +9,17 @@ export const fetchProfile = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { profile } = getState() as any;
+      if (profile.isLoading) return false;
+      // Profile context is heavy and static. Deep trust (1 hour).
+      if (profile.context && (Date.now() - (profile as any).lastFetchedProfile < 3600000)) {
+        return false;
+      }
+      return true;
+    }
   }
 );
 
@@ -19,6 +30,17 @@ export const fetchInsights = createAsyncThunk(
       return await userService.getInsights();
     } catch (err: any) {
       return rejectWithValue(err.message);
+    }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { profile } = getState() as any;
+      if (profile.insightsLoading) return false;
+      // Insights are dynamic but can be cached for 15 mins
+      if (profile.insights && (Date.now() - (profile as any).lastFetchedInsights < 900000)) {
+        return false;
+      }
+      return true;
     }
   }
 );
@@ -42,6 +64,8 @@ interface ProfileState {
   isLoading: boolean;
   insightsLoading: boolean;
   error: string | null;
+  lastFetchedProfile: number;
+  lastFetchedInsights: number;
 }
 
 const initialState: ProfileState = {
@@ -50,6 +74,8 @@ const initialState: ProfileState = {
   isLoading: false,
   insightsLoading: false,
   error: null,
+  lastFetchedProfile: 0,
+  lastFetchedInsights: 0,
 };
 
 const profileSlice = createSlice({
@@ -64,6 +90,7 @@ const profileSlice = createSlice({
       .addCase(fetchProfile.fulfilled, (state, action) => {
         state.isLoading = false;
         state.context = action.payload;
+        state.lastFetchedProfile = Date.now();
       })
       .addCase(fetchProfile.rejected, (state, action) => {
         state.isLoading = false;
@@ -75,6 +102,7 @@ const profileSlice = createSlice({
       .addCase(fetchInsights.fulfilled, (state, action) => {
         state.insightsLoading = false;
         state.insights = action.payload;
+        state.lastFetchedInsights = Date.now();
       })
       .addCase(fetchInsights.rejected, (state) => {
         state.insightsLoading = false;

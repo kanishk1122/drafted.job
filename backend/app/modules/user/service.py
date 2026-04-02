@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.modules.user.model import UserContext
 from app.modules.user.schema import UserCreate, UserLogin, UserUpdate
 from jose import JWTError, jwt
+from app.core.redis import cached, cache
 
 PLATFORM_LIST = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre"]
 
@@ -37,6 +38,7 @@ class UserService:
             "active_platforms": active_platforms,
         }
 
+    @cached(expire_seconds=1200, key_prefix="auth")
     def get_me(self, db: Session, token: str):
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
@@ -87,6 +89,7 @@ class UserService:
         response.delete_cookie("access_token")
         return {"message": "Session terminated."}
 
+    @cached(expire_seconds=600, key_prefix="context")
     def get_user_context(self, db: Session):
         user = db.query(UserContext).first()
         if not user:
@@ -104,6 +107,10 @@ class UserService:
 
         db.commit()
         db.refresh(user)
+        # INDUSTRIAL INVALIDATION: Clear auth, context, and insights cache
+        cache.clear_pattern("auth:get_me:*")
+        cache.clear_pattern("context:get_user_context:*")
+        cache.clear_pattern("insights:get_user_insights:*")
         return self._safe_user(user)
 
     def _set_auth_cookie(self, response: Response, token: str):
@@ -117,6 +124,7 @@ class UserService:
             secure=False,
         )
 
+    @cached(expire_seconds=3600, key_prefix="insights")
     def get_user_insights(self, db: Session):
         user = db.query(UserContext).first()
         if not user:

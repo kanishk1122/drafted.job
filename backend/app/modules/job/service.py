@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from app.modules.job.model import JobRepository, JobStatus
 from app.modules.job.schema import JobCreateSchema
 from typing import Optional
+from app.core.redis import cached, cache
 
 class JobService:
     def create_manual_job(self, db: Session, user_id: int, job_data: JobCreateSchema):
@@ -21,8 +22,37 @@ class JobService:
         db.add(job)
         db.commit()
         db.refresh(job)
+        
+        # INDUSTRIAL INVALIDATION: Force metrics refresh
+        self._clear_user_caches(user_id)
+        return job
+
+    def save_scouted_job(self, db: Session, user_id: int, data: dict):
+        """Clinical entry point for AI scout missions."""
+        job = JobRepository(
+            user_id=user_id,
+            title=data.get("title"),
+            company=data.get("company"),
+            location=data.get("location"),
+            url=data.get("url"),
+            platform=data.get("platform"),
+            description=data.get("description"),
+            salary=data.get("salary"),
+            currency=data.get("currency"),
+            tech_stack=data.get("tech_stack"),
+            heuristic_score=data.get("heuristic_score"),
+            match_reason=data.get("match_reason"),
+            status=JobStatus.NEW
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        # INDUSTRIAL INVALIDATION
+        self._clear_user_caches(user_id)
         return job
         
+    @cached(expire_seconds=900, key_prefix="jobs_list")
     def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, q: Optional[str] = None, sort_by: str = "newest", limit: int = 50, offset: int = 0):
         query = db.query(JobRepository).filter(
             JobRepository.user_id == user_id,
@@ -59,6 +89,9 @@ class JobService:
         job.status = status
         db.commit()
         db.refresh(job)
+        
+        # INDUSTRIAL INVALIDATION
+        self._clear_user_caches(user_id)
         return job
 
     def get_job_by_id(self, db: Session, user_id: int, job_id: int):
@@ -68,7 +101,7 @@ class JobService:
             JobRepository.user_id == user_id
         ).first()
 
-
+    @cached(expire_seconds=300, key_prefix="metrics")
     def get_job_metrics(self, db: Session, user_id: int):
         user_query = db.query(JobRepository).filter(JobRepository.user_id == user_id)
         total = user_query.count()
@@ -95,6 +128,14 @@ class JobService:
         
         job.is_active = False
         db.commit()
+        
+        # INDUSTRIAL INVALIDATION
+        self._clear_user_caches(user_id)
         return {"status": "success", "id": job_id}
+
+    def _clear_user_caches(self, user_id: int):
+        """Industrial Pulse: Purge all caches related to this user's job telemetry."""
+        cache.clear_pattern(f"metrics:get_job_metrics:{user_id}:*")
+        cache.clear_pattern(f"jobs_list:list_jobs:{user_id}:*")
 
 job_service = JobService()

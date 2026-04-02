@@ -2,6 +2,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 import json
 import re
+from app.core.redis import cached
 
 class AIService:
     def __init__(self):
@@ -13,6 +14,7 @@ class AIService:
             api_key=self.api_key
         ) if self.api_key else None
 
+    @cached(expire_seconds=3600, key_prefix="intent")
     async def extract_intent(self, user_message: str):
         if not self.client:
             print("Warning: NVIDIA_API_KEY not set. Using mock extraction.")
@@ -41,6 +43,7 @@ class AIService:
             print(f"Error calling NVIDIA NIM: {e}")
             return self._mock_extraction(user_message)
 
+    @cached(expire_seconds=1800, key_prefix="query")
     async def refine_search_query(self, user_query: str, skills: str, experience_text: str):
         if not self.client:
             return user_query

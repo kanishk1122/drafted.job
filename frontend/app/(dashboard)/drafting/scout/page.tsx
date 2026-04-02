@@ -5,9 +5,11 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft,  Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchingView, Thought, JobMatch } from "@/components/drafting/SearchingView";
-import { useAppSelector } from "@/lib/redux/store";
+import { useAppSelector, useAppDispatch } from "@/lib/redux/store";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { fetchBrowserSessions, addLocalSession } from "@/lib/redux/slices/browserSlice";
+import { fetchJobs, resetJobs, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
 const LS_KEY = "active_mission_state";
@@ -22,6 +24,7 @@ export default function MissionPageWrapper() {
 
 function MissionPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   const user = useAppSelector((state) => state.auth);
 
@@ -76,7 +79,17 @@ function MissionPage() {
 
     es.onmessage = (e) => {
       const event = JSON.parse(e.data);
-      if (event.type === "thinking") {
+      if (event.type === "session_created") {
+        dispatch(addLocalSession({
+          id: event.data.id,
+          name: event.data.name,
+          platform: event.data.platform,
+          status: 'active',
+          date: event.data.date || new Date().toISOString(),
+          totalJobs: 0,
+          breakdown: []
+        }));
+      } else if (event.type === "thinking") {
         const isMatch = event.message.startsWith("✅");
         const isSkip  = event.message.startsWith("⏭️");
         const isError = event.message.startsWith("❌") || event.message.startsWith("⛔") || event.message.startsWith("⚠️");
@@ -146,6 +159,15 @@ function MissionPage() {
 
   const handleFinish = () => {
     localStorage.removeItem(LS_KEY);
+    
+    // INDUSTRIAL RECOVERY: Force-sync global state to source-of-truth
+    if (user.userEmail) {
+      dispatch(fetchBrowserSessions(user.userEmail));
+      dispatch(resetJobs());
+      dispatch(fetchJobs({ limit: 50 }));
+      dispatch(fetchJobMetrics());
+    }
+
     router.push("/drafting");
   };
 

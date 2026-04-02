@@ -97,16 +97,25 @@ export default function JobIntelList({
 
                               <div className="flex items-center gap-3 text-[9px] font-black text-muted-foreground/60 uppercase tracking-widest relative z-10">
                                  {/* Platform favicon */}
-                                 <div className="flex items-center gap-1.5">
+                                 <div className="flex items-center gap-1.5 shrink-0">
                                     <img src={`https://www.google.com/s2/favicons?domain=${job.platform?.toLowerCase()}.com&sz=32`} alt={job.platform} className="h-3 w-3 grayscale opacity-60" />
                                     <span>{job.platform?.toUpperCase()}</span>
                                  </div>
+                                 
+                                 {/* Location Index */}
+                                 {job.location && (
+                                    <div className="flex items-center gap-1 border-l border-border/40 pl-3">
+                                       <Search size={10} className="text-primary/40" />
+                                       <span className="truncate max-w-[120px]">{job.location}</span>
+                                    </div>
+                                 )}
+
                                  {/* Salary if present */}
                                  {job.salary && job.salary !== 'Not specified' && (
                                     <span className="text-green-500/70">{job.salary}</span>
                                  )}
                                  {/* Match score */}
-                                 <span className="ml-auto text-primary/80 font-black">MATCH: {job.heuristic_score}%</span>
+                                 <span className="ml-auto text-primary/80 font-black shrink-0">MATCH: {job.heuristic_score}%</span>
                               </div>
 
                               {/* Selection Rim Light */}

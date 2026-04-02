@@ -62,12 +62,17 @@ export default function PositionSpecifications({
                                     <Badge variant="outline" className="text-[10px] border-primary/40 text-primary bg-primary/5 font-black uppercase tracking-widest h-6">
                                        ROLE_{selectedJob.id.toString().padStart(3, '0')}
                                     </Badge>
-                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-60 flex items-center gap-1.5">
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-60 flex items-center gap-1.5 shrink-0">
                                        PROBED VIA <img src={`https://www.google.com/s2/favicons?domain=${selectedJob.platform.toLowerCase()}.com&sz=128`} className="h-4 w-4 grayscale opacity-60" alt="" /> {selectedJob.platform.toUpperCase()}
-                                       <a href={selectedJob.url} target="_blank" rel="noopener noreferrer" className="ml-2 hover:text-primary transition-colors">
-                                          <ExternalLink size={12} />
-                                       </a>
                                     </span>
+                                    {selectedJob.location && (
+                                       <span className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-1 border-l border-border/40 pl-3">
+                                          <Briefcase size={12} className="opacity-40" /> {selectedJob.location}
+                                       </span>
+                                    )}
+                                    <a href={selectedJob.url} target="_blank" rel="noopener noreferrer" className="ml-2 hover:text-primary transition-colors text-muted-foreground">
+                                       <ExternalLink size={12} />
+                                    </a>
                                  </div>
                                  <h2 className="text-4xl font-black uppercase tracking-tighter text-foreground leading-tight">{selectedJob.title}</h2>
                               </div>

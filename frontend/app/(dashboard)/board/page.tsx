@@ -124,7 +124,7 @@ export default function BoardPage() {
    useEffect(() => {
       // TACTICAL DEBOUNCE: Optimize API telemetry for large pipelines
       const identifier = setTimeout(() => {
-         dispatch(resetJobs());
+         // SKIP resetJobs() - it was nuking the cache and forcing redundant fetches
          dispatch(fetchJobs({ 
             q: searchQuery, 
             min_score: config?.minMatchScore || 0,

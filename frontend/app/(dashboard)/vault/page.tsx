@@ -60,8 +60,8 @@ export default function VaultPage() {
    }, [searchParams, dispatch]);
 
    React.useEffect(() => {
-     // SURGICAL RESET: Clear current vault cache before ingesting new platform/status telemetry
-     dispatch(resetJobs());
+     // MISSION-AWARE FETCH: Redux condition node will skip redundant calls.
+     // STOP using resetJobs() here - it was nuking the cache and forcing fetches.
      dispatch(fetchJobs({ 
        platform: selectedPlatform, 
        status: selectedStatus === "ALL" ? undefined : selectedStatus.toLowerCase(),

@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { jobService, Job, JobSummary, JobFilterParams, JobCreate } from "@/lib/services/job-service";
+import { fetchBrowserSessions } from "./browserSlice";
 
 export const createManualJob = createAsyncThunk(
   "job/createManual",
@@ -24,6 +25,10 @@ interface JobState {
   hasMore: boolean;
   offset: number;
   lastFetchedByPlatform: Record<string, number>; // Cache timestamps
+  metricsLastFetched: number;
+  metricsLoading: boolean;
+  isStale: boolean;
+  hasActiveSessionPreviously: boolean;
 }
 
 const initialState: JobState = {
@@ -37,6 +42,10 @@ const initialState: JobState = {
   hasMore: true,
   offset: 0,
   lastFetchedByPlatform: {},
+  metricsLastFetched: 0,
+  metricsLoading: false,
+  isStale: false,
+  hasActiveSessionPreviously: false,
 };
 
 export const fetchJobs = createAsyncThunk(
@@ -50,18 +59,29 @@ export const fetchJobs = createAsyncThunk(
   },
   {
     condition: (params, { getState }) => {
-      const { job } = getState() as RootState;
-      const platform = params.platform || "ALL";
-      const lastFetched = job.lastFetchedByPlatform[platform];
+      const { job, browser } = getState() as RootState;
+      if (job.loading) return false; // COLLISION GUARD
+
+      const platform = (params as any).platform || "ALL";
+      const lastFetched = (job as any).lastFetchedByPlatform?.[platform] || 0;
       const now = Date.now();
       
-      // SMART CACHE: If it's a fresh load (offset 0), only skip if data is extremely fresh (< 10s)
-      if ((params.offset || 0) === 0) {
-        if (lastFetched && (now - lastFetched < 10000) && job.jobs.length > 0) {
-          return false;
+      // MISSION-AWARE CACHE: If no active scout is running, trust the existing vault data
+      const isScoutRunning = browser.sessions.some(s => s.status === 'active' || (s as any).status === 'running');
+      const hasContent = job.jobs.length > 0;
+      
+      if (!isScoutRunning && hasContent && !job.isStale && !(params as any).forceRefresh) {
+        // Clinical Skip: No mission active, vault already populated AND not stale. Trust memory (30 min).
+        if (now - lastFetched < 1800000) {
+            return false;
         }
-        return true;
       }
+
+      // If scout IS running, limit polling to every 30s to see progress
+      if (isScoutRunning && hasContent && (now - lastFetched < 30000)) {
+        return false;
+      }
+
       return true;
     }
   }
@@ -109,6 +129,25 @@ export const fetchJobMetrics = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { job, browser } = getState() as RootState;
+      const metricsLastFetched = (job as any).metricsLastFetched || 0;
+      const now = Date.now();
+      
+      const isScoutRunning = browser.sessions.some(s => s.status === 'active' || (s as any).status === 'running');
+
+      if (!isScoutRunning && job.metrics && !job.isStale && (now - metricsLastFetched < 1800000)) {
+        return false;
+      }
+      
+      if (isScoutRunning && job.metrics && (now - metricsLastFetched < 30000)) {
+        return false;
+      }
+
+      return true;
+    }
   }
 );
 
@@ -153,6 +192,7 @@ const jobSlice = createSlice({
       })
       .addCase(fetchJobs.fulfilled, (state, action) => {
         state.loading = false;
+        state.isStale = false; // SYNCHRONIZED
         const platform = action.meta.arg.platform || "ALL";
         state.lastFetchedByPlatform[platform] = Date.now();
 
@@ -218,6 +258,23 @@ const jobSlice = createSlice({
       })
       .addCase(fetchJobMetrics.fulfilled, (state, action) => {
         state.metrics = action.payload;
+        state.metricsLastFetched = Date.now();
+        state.isStale = false; // SYNCHRONIZED
+        state.metricsLoading = false;
+      })
+      .addCase(fetchJobMetrics.pending, (state) => {
+        state.metricsLoading = true;
+      })
+      .addCase(fetchJobMetrics.rejected, (state) => {
+        state.metricsLoading = false;
+      })
+      .addCase(fetchBrowserSessions.fulfilled, (state, action) => {
+        const currentlyActive = action.payload.some((s: any) => s.status === 'active' || s.status === 'running');
+        // CRITICAL SYNC: If mission just transitioned to COMPLETED, flag vault as stale
+        if (!currentlyActive && state.hasActiveSessionPreviously) {
+          state.isStale = true;
+        }
+        state.hasActiveSessionPreviously = currentlyActive;
       })
       .addCase(createManualJob.fulfilled, (state, action) => {
         // Add to list and full cache

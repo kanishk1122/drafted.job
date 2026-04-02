@@ -142,10 +142,15 @@ async def _extract_card_data_linkedin(card) -> dict:
 
             const locationEl = el.querySelector(
                 '.job-card-container__metadata-item, ' +
+                '.job-card-container__metadata-wrapper, ' +
                 '.job-search-card__location, ' +
-                '.artdeco-entity-lockup__metadata'
+                '.artdeco-entity-lockup__metadata, ' +
+                '.job-card-container__company-name + span'
             );
-            const location = locationEl ? locationEl.innerText.trim() : '';
+            let location = locationEl ? locationEl.innerText.trim() : '';
+            
+            // TACTICAL: Clean up "Location (Remote)" or "Location (On-site)"
+            if (location.includes('\\n')) location = location.split('\\n')[0].trim();
 
             const jobId = el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id') || '';
 
@@ -212,24 +217,52 @@ async def _extract_card_data_generic(card, config, location_default: str) -> dic
         return {"title": "", "company": "", "location": "", "href": "", "posted_at": ""}
 
 
-async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000) -> str:
+async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000) -> dict:
     try:
         await card.click()
         # LinkedIn and Foundit JD side-panels
-        await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout", timeout=timeout)
-        await asyncio.sleep(0.8)
-        desc = await page.evaluate("""() => {
-            // Prioritize surgical JD sections
-            const panel = document.querySelector('.jobDescriptionNew') || 
-                          document.querySelector('#jdSection') || 
+        await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container", timeout=timeout)
+        await asyncio.sleep(1.2)
+        
+        intel = await page.evaluate("""() => {
+            // 1. Description Drill
+            const panel = document.querySelector('#job-details') || 
+                          document.querySelector('.jobs-description-content__text') ||
                           document.querySelector('.jobs-description__content') || 
                           document.querySelector('.jobs-box__html-content') || 
+                          document.querySelector('.jobDescriptionNew') || 
+                          document.querySelector('#jdSection') || 
                           document.querySelector('.job-view-layout');
-            return panel ? panel.innerText.trim() : '';
+            const description = panel ? panel.innerText.trim() : '';
+
+            // 2. Mission-Critical Meta Ingest (LinkedIn Specific)
+            const metaContainer = document.querySelector('.job-details-jobs-unified-top-card__tertiary-description-container') ||
+                                 document.querySelector('.job-details-jobs-unified-top-card__primary-description-container');
+            
+            let enrichedLocation = '';
+            if (metaContainer) {
+                const textNodes = Array.from(metaContainer.querySelectorAll('span')).map(s => s.innerText.trim());
+                // Find first non-empty, non-relative-time node
+                enrichedLocation = textNodes.find(t => t.length > 2 && !t.includes('ago') && !t.includes('apply')) || '';
+            }
+
+            // 3. Work Mode Identification (Remote/On-site/Hybrid)
+            const preferences = document.querySelectorAll('.job-details-fit-level-preferences button, .job-details-jobs-unified-top-card__job-insight');
+            let workType = '';
+            preferences.forEach(p => {
+                const t = p.innerText.toUpperCase();
+                if (t.includes('REMOTE') || t.includes('ON-SITE') || t.includes('HYBRID')) {
+                    workType = t;
+                }
+            });
+
+            return { description, location: enrichedLocation, workType };
         }""")
-        return desc[:2000] if desc else ""
-    except Exception:
-        return ""
+        
+        return intel
+    except Exception as e:
+        print(f"⚠️ Detail panel ingest failed: {e}")
+        return {"description": "", "location": "", "workType": ""}
 
 
 class JobScoutService:
@@ -326,10 +359,15 @@ class JobScoutService:
         MISSION SPECIFICATIONS:
         - Job Title: {job_title}
         - Job Description: {job_description[:2500]}
+
+        MISSION GUIDELINES:
+        - BE SKEPTICAL: High scores (70%+) are reserved ONLY for surgical matches where both stack and seniority align.
+        - PENALIZE GAPS: If a job mentions specific technologies (Angular, Vue, iOS, Android, Flutter) that are MISSING from the profile, the score MUST drop by at least 30 points.
         
         MATCH INVARIANTS:
-        1. SENIORITY: If job requires > {years_of_exp + 1.5} years of experience, score MUST be < 30%.
-        2. STACK: Required stack must match React, Node, or Tailwind for scores > 70%.
+        1. SENIORITY: If job requires > {years_of_exp} years of experience, score MUST be capped at 30%.
+        2. UNSUPPORTED STACK: If the job requires highly specific frameworks NOT in the candidate's stack (e.g. Angular when candidate is React-only, or Mobile when candidate is Web-only), score MUST be capped at 50%.
+        3. CORE ALIGNMENT: Required stack must match React or Node for scores > 70%.
         
         OUTPUT PROTOCOL:
         - Return ONLY a raw JSON object string.
@@ -427,6 +465,7 @@ class JobScoutService:
 
     async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db, summary: str = "", experience: str = "", years_of_exp: int = 0) -> AsyncGenerator[str, None]:
         from app.modules.job.model import JobRepository, JobStatus
+        from app.modules.job.service import job_service
         from app.modules.browser.session_model import ScoutSession
 
         scout_session = None
@@ -476,6 +515,18 @@ class JobScoutService:
         model_name = settings.MODEL_NAME
         key_valid = "PRESENT" if settings.NVIDIA_API_KEY else "MISSING"
         yield json.dumps({"type": "thinking", "message": f"🤖 AI Engine Ready (Model: {model_name})"})
+        
+        # BROADCAST: Signal drafting hub that a new session has initialized
+        yield json.dumps({
+            "type": "session_created", 
+            "data": {
+                "id": scout_session.id,
+                "platform": platform,
+                "name": scout_session.name,
+                "target_role": target_role,
+                "date": scout_session.created_at.isoformat() if scout_session.created_at else ""
+            }
+        })
 
         context = pw = browser = None
         try:
@@ -483,13 +534,29 @@ class JobScoutService:
             context, pw, browser = await browser_service.connect_to_local_chrome()
             page = await context.new_page()
 
-            total_saved_count = 0
-            mission_breakdown = []
-            stop_mission = False
+            # Industrial Pulse: Load existing telemetry for resumed missions
+            total_saved_count = scout_session.total_jobs or 0
+            mission_breakdown = list(scout_session.breakdown or [])
+            
+            # Map existing breakdown for easier in-loop updating
+            platform_map = { b["platform"].lower(): i for i, b in enumerate(mission_breakdown) }
 
             for target_platform in platforms:
-                if stop_mission: break
+                stop_platform = False
                 yield json.dumps({"type": "thinking", "message": f"🚀 TARGET ACQUIRED: Initiating mission on {target_platform.upper()}..."})
+                
+                # RECOVERY: Ensure current platform exists in breakdown
+                p_key = target_platform.lower()
+                if p_key not in platform_map:
+                    mission_breakdown.append({
+                        "platform": target_platform.capitalize(),
+                        "logo": f"https://www.google.com/s2/favicons?domain={target_platform.lower()}.com&sz=128",
+                        "count": 0
+                    })
+                    platform_map[p_key] = len(mission_breakdown) - 1
+                
+                p_idx = platform_map[p_key]
+                platform_saved = 0 # Local count for this turn
                 
                 config = PLATFORM_SEARCH_CONFIG.get(target_platform)
                 if not config:
@@ -563,18 +630,22 @@ class JobScoutService:
                             const direct = el.getAttribute('data-occludable-job-id') || 
                                          el.getAttribute('data-job-id') || 
                                          el.getAttribute('data-jk') ||
-                                         (el.classList.contains('cardContainer') || el.id.length > 5 ? el.id : null);
-                            if (direct) return direct;
+                                         (el.id && el.id.length > 5 ? el.id : null);
+                            if (direct) return String(direct);
                             
                             // Indeed specific: search for jcs-JobTitle link inside
-                            const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
-                            if (link) return link.getAttribute('data-jk');
+                            const link = el.querySelector('a.jcs-JobTitle, a[data-jk], a.title');
+                            if (link) {
+                                return link.getAttribute('data-jk') || 
+                                       link.getAttribute('data-job-id') || 
+                                       link.innerText.trim(); // Fallback to title-based ID if needed
+                            }
                             
                             return null;
                         }).filter(id => !!id);
                     }"""
                     ids = await page.evaluate(harvest_script, sel)
-                    if ids: job_ids = ids; break
+                    if ids: job_ids = [str(i) for i in ids]; break
                 
                 if not job_ids:
                     yield json.dumps({"type": "thinking", "message": f"⚠️ {target_platform.upper()}: 0 jobs found."})
@@ -610,7 +681,7 @@ class JobScoutService:
                     return True
 
                 while current_page <= MAX_PAGES:
-                    if not await _check_mission_integrity() or stop_mission: break
+                    if not await _check_mission_integrity() or stop_platform: break
 
                     if current_page > 1:
                         yield json.dumps({"type": "thinking", "message": f"⏭️ {target_platform.upper()}: Page {current_page-1} complete. Navigating..."})
@@ -670,18 +741,28 @@ class JobScoutService:
                         if not job_ids: break
                         yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} new jobs on Page {current_page}."})
 
-                    for i, job_id in enumerate(job_ids[:25]):
-                        if not await _check_mission_integrity() or stop_mission: break
+                    for i, job_id in enumerate(job_ids[:15]): # Cap at 15 per page for faster mission turns
+                        if not await _check_mission_integrity() or stop_platform: break
                         
                         try:
                             # 2. Re-find card by ID inside the loop (Resilience)
-                            # Note: We include [id='{job_id}'] for Foundit/standard ID support
-                            id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], [id='{job_id}'], .job_{job_id}"
+                            id_selector = f"[data-occludable-job-id*='{job_id}'], [data-job-id*='{job_id}'], [data-jk*='{job_id}'], [id*='{job_id}'], [href*='{job_id}']"
                             card = await page.query_selector(id_selector)
-                            if not card and job_id.isdigit():
-                                card = await page.get_by_id(job_id).first()
                             
+                            if not card:
+                                # INDUSTRIAL FALLBACK: If ID selector fails, try finding by text or index
+                                card_selectors = config.get("job_card_selectors", [])
+                                for cs in card_selectors:
+                                    cards = await page.query_selector_all(cs)
+                                    if i < len(cards): 
+                                        card = cards[i]
+                                        break
+
                             if not card: continue
+
+                            # HYDRATION PULSE: Ensure card is scrolled and technically visible
+                            await card.scroll_into_view_if_needed()
+                            await asyncio.sleep(1.0) # Tactical grace period for lazy-load
 
                             if is_linkedin:
                                 # 3. Forced Hydration
@@ -717,8 +798,14 @@ class JobScoutService:
                             yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
                             
                             raw_job_desc = ""
+                            enriched_meta = {}
                             if is_linkedin or target_platform == "foundit":
-                                raw_job_desc = await _get_job_detail_via_panel(page, card, job_id)
+                                intel = await _get_job_detail_via_panel(page, card, job_id)
+                                raw_job_desc = intel.get("description", "")
+                                if intel.get("location"): 
+                                    loc = intel["location"]
+                                    if intel.get("workType"):
+                                        loc = f"{loc} ({intel['workType']})"
                             elif target_platform == "naukri":
                                 yield json.dumps({"type": "thinking", "message": f"🔍 Accessing full JD on {target_platform.upper()}..."})
                                 raw_job_desc = await self._get_job_detail_via_popup(context, page, card, target_platform)
@@ -739,10 +826,11 @@ class JobScoutService:
                             reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
                             
                             posted_at = data.get("posted_at", "").lower()
-                            if any(x in posted_at for x in ["3 day", "4 day", "5 day", "6 day", "7 day", "10 day", "15 day", "20 day", "25 day", "30+ day", "month ago"]):
-                                yield json.dumps({"type": "thinking", "message": f"🛡️ Freshness Cut-off Protocol engaged. Found lead from '{posted_at}'. Terminating mission..."})
-                                stop_mission = True
-                                break # Surgical exit to preserve mission purity
+                            stale_markers = ["3 day", "4 day", "5 day", "6 day", "7 day", "10 day", "15 day", "20 day", "25 day", "30+ day", "month ago"]
+                            if any(x in posted_at for x in stale_markers):
+                                yield json.dumps({"type": "thinking", "message": f"🛡️ Freshness Cut-off Protocol engaged. Found lead from '{posted_at}'. Concluding platform search..."})
+                                stop_platform = True
+                                break # Move to next platform node
                             
                             extracted_salary = res.get("salary", "Not specified")
                             extracted_currency = res.get("currency", "N/A")
@@ -759,34 +847,35 @@ class JobScoutService:
                             if db.query(JobRepository).filter(JobRepository.url == link).first():
                                 yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
 
-                            job = JobRepository(
-                                user_id=user_id, 
-                                title=title, 
-                                company=company, 
-                                location=loc, 
-                                url=link, 
-                                platform=target_platform, 
-                                description=job_desc,
-                                salary=extracted_salary, 
-                                currency=extracted_currency,
-                                tech_stack=extracted_tech, 
-                                heuristic_score=score, 
-                                match_reason=reason, 
-                                status=JobStatus.NEW
-                            )
-                            db.add(job); db.commit(); db.refresh(job); platform_saved += 1; total_saved_count += 1
+                            job = job_service.save_scouted_job(db, user_id, {
+                                "title": title, 
+                                "company": company, 
+                                "location": loc, 
+                                "url": link, 
+                                "platform": target_platform, 
+                                "description": job_desc,
+                                "salary": extracted_salary, 
+                                "currency": extracted_currency,
+                                "tech_stack": extracted_tech, 
+                                "heuristic_score": score, 
+                                "match_reason": reason
+                            })
+                            
+                            # LIVE TELEMETRY: Sync mission breakdown and total count to vault
+                            platform_saved += 1
+                            total_saved_count += 1
+                            mission_breakdown[p_idx]["count"] += 1
+                            
+                            scout_session.total_jobs = total_saved_count
+                            scout_session.breakdown = mission_breakdown
+                            db.commit()
+
                             yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
 
                         except Exception as e:
                             yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
                     
                     current_page += 1
-                
-                mission_breakdown.append({
-                    "platform": target_platform.capitalize(),
-                    "logo": f"https://www.google.com/s2/favicons?domain={target_platform.lower()}.com&sz=128",
-                    "count": platform_saved
-                })
 
             yield json.dumps({"type": "done", "count": total_saved_count, "session_id": session_id})
 
@@ -799,12 +888,17 @@ class JobScoutService:
             # Secure final mission report even if session was aborted early
             try:
                 session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
-                if session and session.status == "running":
-                    session.status = "completed"
+                if session:
+                    # Update metrics regardless of status
                     session.total_jobs = total_saved_count
                     session.breakdown = mission_breakdown
+                    
+                    # Only complete normally if not already failed
+                    if session.status == "running":
+                        session.status = "completed"
+                    
                     db.commit()
-                print(f"✅ Mission resource recovery pulse: Session #{session_id} cleaned up.")
+                print(f"✅ Mission resource recovery pulse: Session #{session_id} secured.")
             except Exception as commit_err:
                 print(f"Failed to commit final session stats: {commit_err}")
 

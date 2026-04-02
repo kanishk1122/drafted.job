@@ -10,6 +10,16 @@ export const fetchMe = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.detail || 'Session validation failed');
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { auth } = getState() as any;
+      if (auth.isAuthenticated && auth.userEmail) {
+        // Clinical skip if already authenticated
+        return false;
+      }
+      return true;
+    }
   }
 );
 

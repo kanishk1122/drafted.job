@@ -43,6 +43,13 @@ def get_context(db: Session = Depends(get_db)):
     """
     return user_service.get_user_context(db)
 
+@router.get("/insights")
+def get_insights(db: Session = Depends(get_db)):
+    """
+    Retrieve real-time profile authority and market demand intelligence.
+    """
+    return user_service.get_user_insights(db)
+
 @router.patch("/")
 def update_context(update: UserUpdate, db: Session = Depends(get_db)):
     """

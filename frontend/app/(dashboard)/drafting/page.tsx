@@ -27,9 +27,15 @@ export default function DraftingPage() {
   const [view, setView] = useState<"operational" | "initiate">("operational");
   const [targetRole, setTargetRole] = useState("");
   const [location, setLocation] = useState("India");
-  const [platform, setPlatform] = useState("linkedin");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin"]);
   const { sessions, loading: sessionsLoading } = useAppSelector((state: RootState) => state.browser);
   const [activeMission, setActiveMission] = useState<any>(null);
+
+  const togglePlatform = (p: string) => {
+    setSelectedPlatforms(prev => 
+      prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+    );
+  };
 
   // Compute active platforms from individual flags in Redux state
   const PLATFORM_IDS = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre"];
@@ -43,7 +49,7 @@ export default function DraftingPage() {
   useEffect(() => {
     if (!context) dispatch(fetchProfile());
 
-    // Check for active/last mission in localStorage
+    // Check for active/last search in localStorage
     const saved = localStorage.getItem(LS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -62,9 +68,9 @@ export default function DraftingPage() {
   const startSearch = () => {
     if (!user.userEmail) { toast.error("Please log in first."); return; }
 
-    // Redirect to dedicated mission page
+    const platformString = selectedPlatforms.join(",");
     const params = new URLSearchParams({
-      platform,
+      platform: platformString,
       role: targetRole,
       location,
     });
@@ -78,52 +84,53 @@ export default function DraftingPage() {
   const handleRestartSession = (session: SearchSession) => {
     const parts = session.name.split(" · ");
     setTargetRole(parts[0] || "");
-    setPlatform(parts[1]?.toLowerCase() || "linkedin");
+    const p = parts[1]?.toLowerCase() || "linkedin";
+    setSelectedPlatforms(p.includes(",") ? p.split(",") : [p]);
     setView("initiate");
   };
 
   return (
-    <div className="relative h-[100%]  p-2">
+    <div className="relative h-full p-2 md:p-4">
       <AnimatePresence mode="wait">
 
-        {/* ────── ACTIVE MISSION OVERLAY (The "Redirect" Logic) ────── */}
+        {/* ────── ACTIVE SEARCH OVERLAY ────── */}
         {activeMission && view === "operational" && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute top-4 inset-x-4 z-50 p-4 rounded-2xl bg-primary/10 border border-primary/30 backdrop-blur-xl flex items-center justify-between shadow-2xl shadow-primary/20"
+            className="absolute inset-x-4 top-4 z-50 flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 p-4 shadow-2xl shadow-primary/20 backdrop-blur-xl"
           >
             <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center animate-pulse">
+              <div className="flex h-10 w-10 animate-pulse items-center justify-center rounded-xl bg-primary/20">
                 <Zap size={20} className="text-primary" />
               </div>
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-primary leading-none">Scout Mission Active</p>
-                <p className="text-[10px] text-muted-foreground mt-1 lowercase font-mono">
-                  {activeMission.targetRole} @ {activeMission.platform.toUpperCase()}
+                <p className="text-xs font-black uppercase leading-none tracking-widest text-primary">Active Search</p>
+                <p className="mt-1 font-mono text-[10px] lowercase text-muted-foreground">
+                  {activeMission.targetRole} @ {activeMission.platform}
                 </p>
               </div>
             </div>
-            <Button onClick={resumeMission} className="rounded-xl h-10 px-6 font-black tracking-widest text-[9px] uppercase gap-2">
-              CONTINUE SCOUT <ArrowRight size={14} />
+            <Button onClick={resumeMission} className="h-10 gap-2 rounded-xl px-6 text-[9px] font-black uppercase tracking-widest">
+              RESUME SEARCH <ArrowRight size={14} />
             </Button>
           </motion.div>
         )}
 
-        {/* ── OPERATIONAL VIEW ── */}
+        {/* ── MAIN VIEW ── */}
         {view === "operational" && (
           <motion.div
             key="operational-panel"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            className="h-full overflow-y-auto no-scrollbar pb-12 pt-16 md:pt-4"
+            className="h-full overflow-y-auto pb-12 pt-16 no-scrollbar md:pt-4"
           >
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 ">
+            <div className="mb-8 flex flex-col justify-between gap-6 md:flex-row md:items-end">
               <div className="space-y-2">
-                <h1 className="text-5xl font-black tracking-tighter uppercase text-foreground">Drafting Hub</h1>
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">
-                  AI Platform Scouting
+                <h1 className="text-5xl font-black uppercase tracking-tighter text-foreground">Job Search</h1>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-60">
+                  Find & Track Opportunities
                 </p>
               </div>
               <div className="flex gap-3">
@@ -132,26 +139,27 @@ export default function DraftingPage() {
                   size="sm"
                   onClick={loadSessions}
                   disabled={sessionsLoading}
-                  className="h-10 px-4 font-black tracking-widest text-[9px] uppercase rounded-sm border-border/60"
+                  className="h-10 rounded-sm border-border/60 px-4 text-[9px] font-black uppercase tracking-widest"
                 >
                   <RefreshCcw size={12} className={`mr-2 ${sessionsLoading ? "animate-spin" : ""}`} /> REFRESH
                 </Button>
                 <Button
                   onClick={() => setView("initiate")}
                   size="sm"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-6 rounded-sm shadow-xl shadow-primary/20 tracking-widest text-[10px] uppercase h-10 group leading-none"
+                  className="group h-10 rounded-sm bg-primary px-6 text-[10px] font-black uppercase leading-none tracking-widest text-primary-foreground shadow-xl shadow-primary/20 hover:bg-primary/90"
                 >
-                  BEGIN JOB SCAN <Play size={14} className="ml-2 group-hover:scale-110 transition-transform" />
+                  START NEW SEARCH <Play size={14} className="ml-2 transition-transform group-hover:scale-110" />
                 </Button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              {/* Left Column */}
               <div className="lg:col-span-1">
-                <Card className="bg-card/40 border-border backdrop-blur-md overflow-hidden h-fit">
-                  <CardHeader className="p-6 border-b border-border/40 bg-muted/20">
-                    <CardTitle className="text-[12px] font-black flex items-center gap-2.5 tracking-[0.2em] uppercase">
-                      <Layers size={14} className="text-primary" /> Multi-Platform Ready
+                <Card className="h-fit overflow-hidden border-border bg-card/40 backdrop-blur-md">
+                  <CardHeader className="border-b border-border/40 bg-muted/20 p-6">
+                    <CardTitle className="flex items-center gap-2.5 text-[12px] font-black uppercase tracking-[0.2em]">
+                      <Layers size={14} className="text-primary" /> Supported Platforms
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -160,7 +168,8 @@ export default function DraftingPage() {
                 </Card>
               </div>
 
-              <div className="lg:col-span-2 space-y-8">
+              {/* Right Column */}
+              <div className="space-y-8 lg:col-span-2">
                 <SearchHistory
                   sessions={sessions}
                   onDelete={(id) => {
@@ -171,17 +180,22 @@ export default function DraftingPage() {
                   onClearAll={() => { }}
                   onRestart={handleRestartSession}
                 />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 ">
-                  <Card className="bg-card/40 border-border backdrop-blur-md border-t-2 border-primary/20 p-6 space-y-3">
-                    <ConfigBlock label="Search Mode" value="INDUSTRIAL AI SCORING" />
-                    <ConfigBlock label="Concurrency" value="HEADLESS PLAYWRIGHT" />
-                    <ConfigBlock label="Engine" value="LLAMA-3.1 RESILIENT" />
+                
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <Card className="space-y-3 border-t-2 border-border border-t-primary/20 bg-card/40 p-6 backdrop-blur-md">
+                    <p className="mb-4 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">Search Settings</p>
+                    <ConfigBlock label="Search Mode" value="INTELLIGENT SCORING" />
+                    <ConfigBlock label="Data Extraction" value="AUTOMATED SCANNING" />
+                    <ConfigBlock label="Analysis" value="LLAMA 3.1" />
                   </Card>
-                  <Card className="bg-card/40 border-border backdrop-blur-md p-6">
-                    <p className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4">Search History</p>
+                  
+                  <Card className="border-border bg-card/40 p-6 backdrop-blur-md">
+                    <p className="mb-4 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">Search Overview</p>
                     <div className="flex items-end gap-3">
-                      <span className="text-4xl font-black tracking-tighter text-foreground leading-none">{sessions.length}</span>
-                      <span className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-1">
+                      <span className="leading-none text-foreground tabular-nums text-4xl font-black tracking-tighter">
+                        {sessions.length}
+                      </span>
+                      <span className="mb-1 text-[10px] font-black uppercase tracking-widest text-green-500">
                         {sessions.filter(s => s.status === "completed").length} SUCCESSFUL
                       </span>
                     </div>
@@ -192,15 +206,15 @@ export default function DraftingPage() {
           </motion.div>
         )}
 
-        {/* ────── INITIATION VIEW (The "Form" view) ────── */}
+        {/* ────── NEW SEARCH FORM VIEW ────── */}
         {view === "initiate" && (
           <InitiationView
             targetRole={targetRole}
             setTargetRole={setTargetRole}
             location={location}
             setLocation={setLocation}
-            platform={platform}
-            setPlatform={setPlatform}
+            selectedPlatforms={selectedPlatforms}
+            togglePlatform={togglePlatform}
             activePlatforms={activePlatforms}
             onAbort={() => setView("operational")}
             onExecute={startSearch}

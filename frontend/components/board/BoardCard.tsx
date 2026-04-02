@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { useAppDispatch } from "@/lib/redux/store";
 import { updateJobStatus, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
 
+import { useRouter } from "next/navigation";
+
 interface BoardCardProps {
    job: JobSummary;
    index: number;
@@ -15,6 +17,7 @@ interface BoardCardProps {
 
 const BoardCard = memo(({ job, index }: BoardCardProps) => {
    const dispatch = useAppDispatch();
+   const router = useRouter();
 
    return (
       <Draggable draggableId={job.id.toString()} index={index}>
@@ -30,14 +33,15 @@ const BoardCard = memo(({ job, index }: BoardCardProps) => {
                className="mb-4"
             >
                <motion.div
+                  onClick={() => router.push(`/vault?jobId=${job.id}`)}
                   whileHover={{ y: -5, scale: 1.02 }}
-                  className={`group relative p-4 bg-card/40 border-2 rounded-2xl transition-all duration-400 shadow-xl ${
+                  className={`group relative p-4 bg-card/40 border-2 rounded-2xl transition-all duration-400 shadow-xl cursor-pointer ${
                      snapshot.isDragging 
                         ? "border-primary shadow-[0_0_30px_rgba(var(--primary-rgb),0.2)]" 
                         : "border-border/40 hover:border-primary/40 hover:bg-primary/5"
                   }`}
                >
-                  <div className="space-y-3 pointer-events-none select-none">
+                  <div className="space-y-3 select-none">
                      <div className="flex justify-between items-start">
                         <div className="space-y-0.5">
                            <div className="flex items-center gap-2">
@@ -61,7 +65,7 @@ const BoardCard = memo(({ job, index }: BoardCardProps) => {
                         <div className="flex items-center gap-1.5 text-muted-foreground/60">
                            <MapPin size={10} className="shrink-0" />
                            <span className="text-[9px] font-semibold uppercase tracking-wider truncate">
-                              {job.location || job.platform?.toUpperCase()}
+                              {job.location && job.location.length > 30 ? job.location.slice(0,30) + "..." : job.location || job.platform?.toUpperCase()}
                            </span>
                         </div>
                         <div className="ml-auto flex flex-col items-end">

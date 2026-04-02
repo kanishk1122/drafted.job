@@ -77,12 +77,13 @@ class AIService:
 
         prompt = f"""
         Extract professional info from resume: "{resume_text[:4000]}"
-        Structure as JSON: full_name, email, phone, location, summary, skills (list), experience (list), education (list).
+        Structure as JSON: full_name, email, phone, location, summary, total_years_of_experience (numeric float), skills (list), experience (list), education (list).
         
         Surgical Extraction Rules:
-        1. EDUCATION: For each item, capture: "degree", "institution" (be specific), "duration" (years). If missing, use empty string.
-        2. EXPERIENCE: For each item, capture: "role", "company", "duration", "description".
-        3. SKILLS EXPANSION: Extract explicit skills AND infer relational skills. 
+        1. SENIORITY CALCULATION: Analyze the 'EXPERIENCE' dates and calculate total unique years of experience. Return as a float (e.g., 1.2 or 4.5).
+        2. EDUCATION: For each item, capture: "degree", "institution" (be specific), "duration" (years). If missing, use empty string.
+        3. EXPERIENCE: For each item, capture: "role", "company", "duration", "description".
+        4. SKILLS EXPANSION: Extract explicit skills AND infer relational skills. 
            (e.g., If 'BeautifulSoup' or 'Scrapy' is found, add 'Python'. If 'React' is found, add 'JavaScript/TypeScript' and 'Frontend'). 
            Ensure all important modern technical stack anchors are present and but also include the skill which is mentioned originally.
         
@@ -121,6 +122,7 @@ class AIService:
             "phone": "000-000-0000",
             "location": "Global",
             "summary": "AI extracted summary placeholder",
+            "total_years_of_experience": 0.0,
             "skills": ["Python", "General Software Engineering"],
             "experience": [],
             "education": []
@@ -168,6 +170,52 @@ class AIService:
         except Exception as e:
             print(f"Error generating recommendations: {e}")
             return self._mock_recommendations()
+
+    async def enhance_resume_content(self, section: str, instructions: str, current_data: dict):
+        if not self.client:
+            return current_data
+
+        # Provide full context to prevent hallucinations
+        full_context = json.dumps(current_data, indent=2)
+
+        prompt = f"""
+        Surgically refine the "{section.upper()}" section of this resume.
+        
+        FULL RESUME CONTEXT (FOR ALIGNMENT):
+        {full_context}
+        
+        REFINEMENT DIRECTIVE: "{instructions}"
+        
+        RULES:
+        1. IDENTITY LOCK: All refinements MUST match the technical arsenal and experience history provided in the context. DO NOT hallucinate skills (like Java/C++ if not present).
+        2. PROFESSIONAL IMPACT: Elevate the narrative impact for high-grade recruitment scouts.
+        3. FORMAT RETENTION: Return the refined content in the EXACT same structural format as the original {section}.
+        
+        Return ONLY valid JSON: {{"refined_content": "..."}}
+        """
+
+        try:
+            completion = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=2048,
+                timeout=25.0
+            )
+            
+            response_text = completion.choices[0].message.content
+            json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group(1).strip())
+                # Update current data locally and return full updated data
+                new_data = {**current_data}
+                new_data[section.lower()] = result.get("refined_content")
+                return new_data
+            
+            return current_data
+        except Exception as e:
+            print(f"Error enhancing resume section: {e}")
+            return current_data
 
     def _mock_recommendations(self):
         return [

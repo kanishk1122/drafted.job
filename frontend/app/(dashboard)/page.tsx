@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/store";
 import { fetchJobs, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
+import { fetchInsights } from "@/lib/redux/slices/profileSlice";
 import { getCurrentISTTime } from "@/lib/utils";
 
 // Components
@@ -22,13 +23,15 @@ export default function DashboardPage() {
    const handleRescan = () => {
       dispatch(fetchJobMetrics());
       dispatch(fetchJobs({ limit: 10, sort_by: "newest" }));
+      dispatch(fetchInsights());
    };
 
    useEffect(() => {
       const bootstrapDashboard = async () => {
          await Promise.all([
             dispatch(fetchJobMetrics()),
-            dispatch(fetchJobs({ limit: 10, sort_by: "newest" }))
+            dispatch(fetchJobs({ limit: 10, sort_by: "newest" })),
+            dispatch(fetchInsights())
          ]);
       };
 

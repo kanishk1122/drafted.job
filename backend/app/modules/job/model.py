@@ -1,5 +1,5 @@
 from enum import Enum
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum, Boolean
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -34,5 +34,6 @@ class JobRepository(Base):
     match_reason = Column(Text)
     
     status = Column(SQLEnum(JobStatus), default=JobStatus.NEW)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { DragDropContext, DropResult, DragUpdate } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/store";
-import { fetchJobs, updateJobStatus } from "@/lib/redux/slices/jobSlice";
+import { fetchJobs, updateJobStatus, resetJobs } from "@/lib/redux/slices/jobSlice";
+
+import { PipelineSettings, PipelineSettingsData } from "@/components/board/PipelineSettings";
 
 const columns = [
    { id: "new", title: "DRAFTED", color: "bg-blue-500" },
@@ -17,14 +19,26 @@ const columns = [
    { id: "rejected", title: "REJECTED", color: "bg-red-500" }
 ];
 
+const LS_CONFIG_KEY = "pipeline_config_v1";
+
 export default function BoardPage() {
    const dispatch = useAppDispatch();
    const { jobs, loading } = useAppSelector((state) => state.job);
    const [searchQuery, setSearchQuery] = useState("");
    const [showSearch, setShowSearch] = useState(false);
+   const [showSettings, setShowSettings] = useState(false);
+   const [config, setConfig] = useState<PipelineSettingsData | null>(null);
 
    const scrollRef = useRef<HTMLDivElement>(null);
    const rafRef = useRef<number | null>(null);
+
+   // Load initial config from LS
+   useEffect(() => {
+      const saved = localStorage.getItem(LS_CONFIG_KEY);
+      if (saved) {
+         try { setConfig(JSON.parse(saved)); } catch (e) { console.error(e); }
+      }
+   }, []);
 
    useEffect(() => {
       const track = (e: MouseEvent) => { (window as any).__dragX = e.clientX; };
@@ -33,8 +47,9 @@ export default function BoardPage() {
    }, []);
 
    useEffect(() => {
-      dispatch(fetchJobs({ limit: 1000 }));
-   }, [dispatch]);
+      // Data is now fetched via the debounced search useEffect below
+      // but we add config to deps to re-fetch when score threshold changes
+   }, []);
 
    const handleShareStatus = () => {
       const summary = jobs.map(j => `${j.title} @ ${j.company} [${j.status}]`).join('\n');
@@ -44,9 +59,12 @@ export default function BoardPage() {
       });
    };
 
-   const handleSettings = () => {
-      toast.info("PIPELINE SETTINGS", {
-         description: "Opening configuration interface...",
+   const handleSettingsSave = (newConfig: PipelineSettingsData) => {
+      setConfig(newConfig);
+      dispatch(resetJobs());
+      dispatch(fetchJobs({ q: searchQuery, min_score: newConfig.minMatchScore, limit: 1000 }));
+      toast.success("PIPELINE CONFIGURATION SAVED", {
+         description: "Settings synchronized and data threshold updated.",
       });
    };
 
@@ -103,10 +121,19 @@ export default function BoardPage() {
       dispatch(updateJobStatus({ jobId: activeId, status: destStatus }));
    };
 
-   const filteredJobs = useMemo(() => jobs.filter(job => 
-      job.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      job.company.toLowerCase().includes(searchQuery.toLowerCase())
-   ), [jobs, searchQuery]);
+   useEffect(() => {
+      // TACTICAL DEBOUNCE: Optimize API telemetry for large pipelines
+      const identifier = setTimeout(() => {
+         dispatch(resetJobs());
+         dispatch(fetchJobs({ 
+            q: searchQuery, 
+            min_score: config?.minMatchScore || 0,
+            limit: 1000 
+         }));
+      }, 500);
+
+      return () => clearTimeout(identifier);
+   }, [searchQuery, config?.minMatchScore, dispatch]);
 
    const jobsByStatus = useMemo(() => {
       const acc: Record<string, any[]> = columns.reduce((map, col) => {
@@ -114,7 +141,7 @@ export default function BoardPage() {
          return map;
       }, {} as Record<string, any[]>);
 
-      filteredJobs.forEach(job => {
+      jobs.forEach(job => {
          const matchingCol = columns.find(c => job.status?.toLowerCase().includes(c.id.toLowerCase()));
          if (matchingCol && acc[matchingCol.id]) {
             acc[matchingCol.id].push(job);
@@ -122,7 +149,7 @@ export default function BoardPage() {
       });
 
       return acc;
-   }, [filteredJobs]);
+   }, [jobs]);
 
    return (
       <div className="h-full flex flex-col space-y-8 overflow-hidden font-sans">
@@ -160,7 +187,7 @@ export default function BoardPage() {
                   <Filter size={18} />
                </Button>
                <Button 
-                  onClick={handleSettings}
+                  onClick={() => setShowSettings(true)}
                   variant="outline" 
                   className="h-12 w-12 p-0 border-2 border-border/40 rounded-xl hover:border-primary/40 flex items-center justify-center"
                >
@@ -190,6 +217,12 @@ export default function BoardPage() {
                </div>
             </DragDropContext>
          )}
+
+         <PipelineSettings 
+            isOpen={showSettings} 
+            onClose={() => setShowSettings(false)} 
+            onSave={handleSettingsSave} 
+         />
       </div>
    );
 }

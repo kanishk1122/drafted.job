@@ -42,28 +42,41 @@ PLATFORM_SEARCH_CONFIG = {
         "location_selector": "[data-testid='text-location'], .companyLocation, .css-1p99vba",
     },
     "foundit": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, yox=1: (
             f"https://www.foundit.in/srp/results"
             f"?query={urllib.parse.quote_plus(q)}"
             f"&locations={urllib.parse.quote_plus(loc)}"
+            f"&experienceRanges={yox}%7E{yox}"
+            f"&experience={yox}"
+            f"&jobFreshness=3"
+            f"&sort=1"
         ),
-        "job_card_selectors": ["div.srpCard", "div.job-apply-card"],
-        "wait_selector": "div.srpCard",
-        "title_selector": ".jobTitle, .title",
-        "company_selector": ".companyName, .company",
-        "location_selector": ".location, .loc",
+        "job_card_selectors": ["div.cardContainer", "div.srpCard", "div.job-apply-card"],
+        "wait_selector": "div.cardContainer, div.srpCard",
+        "title_selector": ".jobTitle, #jobCardTitle, .title",
+        "company_selector": ".companyName, .companyName p, .company",
+        "location_selector": ".location, .details.location",
+        "posted_selector": ".timeText"
     },
     "naukri": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, yox=0: (
             f"https://www.naukri.com/"
-            f"{urllib.parse.quote_plus(q).replace(' ','-')}"
-            f"-jobs-in-{urllib.parse.quote_plus(loc).replace(' ','-')}"
+            f"{q.lower().replace(' ', '-').replace('.', '-dot-')}"
+            f"-jobs-in-{loc.lower().replace(' ', '-')}"
+            f"?k={urllib.parse.quote(q)}"
+            f"&l={urllib.parse.quote(loc)}"
+            f"&experience={yox}"
+            f"&qproductJobSource=2"
+            f"&naukriCampus=true"
         ),
-        "job_card_selectors": ["article.jobTuple", ".srp-jobtuple-wrapper"],
-        "wait_selector": "article.jobTuple, .srp-jobtuple-wrapper",
-        "title_selector": "a.title, .job-title",
-        "company_selector": "a.subTitle, .comp-name",
-        "location_selector": ".locWdth, .loc-wrap",
+        "job_card_selectors": [".srp-jobtuple-wrapper", "article.jobTuple"],
+        "wait_selector": ".srp-jobtuple-wrapper, article.jobTuple",
+        "title_selector": "a.title",
+        "company_selector": "a.comp-name",
+        "location_selector": ".locWdth",
+        "description_selector": ".job-desc",
+        "tags_selector": ".tag-li",
+        "posted_selector": "[class*='job-post-day']"
     },
     "glassdoor": {
         "search_url": lambda q, loc: (
@@ -165,18 +178,53 @@ async def _extract_card_data_generic(card, config, location_default: str) -> dic
         loc = (await location_el.inner_text() if location_el else location_default).strip()
         link = await title_el.get_attribute("href") if title_el else ""
 
-        return {"title": title, "company": company, "location": loc, "href": link}
+        # TACTICAL: Extract secondary skills/tags for better AI matching
+        tags = []
+        if config.get("tags_selector"):
+            tag_elements = await card.query_selector_all(config["tags_selector"])
+            for t_el in tag_elements:
+                tags.append((await t_el.inner_text()).strip())
+        
+        # EXTRACT: Job snippet/description from card if available
+        desc_snippet = ""
+        if config.get("description_selector"):
+            desc_el = await card.query_selector(config["description_selector"])
+            if desc_el:
+                desc_snippet = (await desc_el.inner_text()).strip()
+
+        # EXTRACT: Freshness Signal (Temporal context)
+        posted_at = ""
+        if config.get("posted_selector"):
+            posted_el = await card.query_selector(config["posted_selector"])
+            if posted_el:
+                posted_at = (await posted_el.inner_text()).strip()
+
+        return {
+            "title": title, 
+            "company": company, 
+            "location": loc, 
+            "href": link,
+            "tags": ", ".join(tags) if tags else "",
+            "description": desc_snippet,
+            "posted_at": posted_at
+        }
     except Exception:
-        return {"title": "", "company": "", "location": "", "href": ""}
+        return {"title": "", "company": "", "location": "", "href": "", "posted_at": ""}
 
 
 async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000) -> str:
     try:
         await card.click()
-        await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, .job-view-layout", timeout=timeout)
+        # LinkedIn and Foundit JD side-panels
+        await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout", timeout=timeout)
         await asyncio.sleep(0.8)
         desc = await page.evaluate("""() => {
-            const panel = document.querySelector('.jobs-description__content, .jobs-box__html-content, .job-view-layout');
+            // Prioritize surgical JD sections
+            const panel = document.querySelector('.jobDescriptionNew') || 
+                          document.querySelector('#jdSection') || 
+                          document.querySelector('.jobs-description__content') || 
+                          document.querySelector('.jobs-box__html-content') || 
+                          document.querySelector('.job-view-layout');
             return panel ? panel.innerText.trim() : '';
         }""")
         return desc[:2000] if desc else ""
@@ -191,56 +239,193 @@ class JobScoutService:
             api_key=settings.NVIDIA_API_KEY
         ) if settings.NVIDIA_API_KEY else None
 
-    async def _score_job_with_ai(self, job_title: str, job_description: str, user_skills: str, target_role: str, summary: str = "", experience: str = "") -> dict:
+    async def _get_job_detail_via_popup(self, context, page, card, platform: str) -> str:
+        # TACTICAL: Finalize any ghost tabs before mission start
+        for p in context.pages:
+            if p != page:
+                try: await p.close(run_before_unload=False)
+                except: pass
+            
+        new_page = None
+        try:
+            # TACTICAL: Force click via JS evaluation to bypass Naukri's UI overlays
+            # We use a non-blocking waiter to capture the new tab
+            page_promise = context.wait_for_event("page", timeout=15000)
+            
+            await card.evaluate('''(el) => {
+                const link = el.querySelector('a.title, .job-title, h2 a');
+                if (link) { link.scrollIntoView(); link.click(); }
+                else { el.click(); }
+            }''')
+            
+            new_page = await page_promise
+            
+            # RESOURCE SHIELD: Use internal try/finally for the page scope
+            try:
+                # SATURATION: Wait for full window load and technical hydration
+                await new_page.wait_for_load_state("load", timeout=15000)
+                await asyncio.sleep(2.0) # Industrial saturation grace period
+
+                # TACTICAL DRILL: Handle Naukri's "Something went wrong" hydration failure
+                error_check = await new_page.evaluate('() => document.body.innerText.includes("Something went wrong")')
+                if error_check:
+                    print(f"🔄 Platform instability detected (Oops!). Triggering tactical reload...")
+                    await new_page.reload(wait_until="load")
+                    await asyncio.sleep(3.0) 
+                
+                # Mission-Critical: Extract the full career blueprint
+                desc = await new_page.evaluate("""() => {
+                    const selectors = [
+                        "[class*='job-desc-container']", 
+                        "[class*='JDC__dang-inner-html']",
+                        "[class*='key-skill']",
+                        "section.styles_job-desc-container__txpYf"
+                    ];
+                    
+                    let fullText = "";
+                    const sections = document.querySelectorAll(selectors.join(","));
+                    sections.forEach(s => { fullText += s.innerText + "\\n"; });
+                    
+                    if (fullText.trim().length > 100) return fullText.trim();
+                    return document.body.innerText.trim().substring(0, 5000);
+                }""")
+                
+                return desc[:4500] if desc else ""
+            finally:
+                if new_page:
+                    await new_page.close(run_before_unload=False)
+                    
+        except Exception as e:
+            print(f"⚠️ Popup mission failed for {platform}: {e}")
+            return ""
+
+    async def _score_job_with_ai(self, job_title: str, job_description: str, user_skills: str, target_role: str, summary: str = "", experience: str = "", years_of_exp: int = 0) -> dict:
         # Preparation for fallback
         def _get_keyword_score():
             skills_list = [s.strip().lower() for s in user_skills.split(",")]
             desc_lower = (job_title + " " + job_description).lower()
             matches = sum(1 for s in skills_list if s in desc_lower)
             score = min(100, int((matches / max(len(skills_list), 1)) * 100))
+            
             return {"score": score, "reason": f"Heuristic: {matches} skills matched.", "skip": score < 40}
 
         if not self.nim_client:
             return _get_keyword_score()
 
-        prompt = f"""Assess Job Alignment for Candidate:
-Target Role: {target_role}
-Candidate Summary: {summary}
-Candidate Skills: {user_skills}
-Candidate Experience: {experience[:1500]}
-
-Job Title: {job_title}
-Job Description: {job_description[:2000]}
-
-Scoring Rule: Respond ONLY with valid JSON.
-Format: {{
-  "score": 0-100, 
-  "reason": "reasoning", 
-  "skip": boolean,
-  "salary": "range or 'Not specified'",
-  "currency": "USD/INR/EUR etc.",
-  "tech_stack": ["skill1", "skill2"]
-}}
-"""
+        prompt = f"""
+        [STRICT RECRUITMENT ANALYSIS - OUTPUT ONLY RAW JSON - NO MARKDOWN - NO CODE]
+        
+        Analyze the match between this Candidate and Job Lead.
+        
+        CANDIDATE PROFILE:
+        - Target Role: {target_role}
+        - Experience: {experience[:1000]}
+        - Skills: {user_skills}
+        - Total Experience: {years_of_exp} years.
+        
+        MISSION SPECIFICATIONS:
+        - Job Title: {job_title}
+        - Job Description: {job_description[:2500]}
+        
+        MATCH INVARIANTS:
+        1. SENIORITY: If job requires > {years_of_exp + 1.5} years of experience, score MUST be < 30%.
+        2. STACK: Required stack must match React, Node, or Tailwind for scores > 70%.
+        
+        OUTPUT PROTOCOL:
+        - Return ONLY a raw JSON object string.
+        - DO NOT wrap in backticks (```json).
+        - DO NOT return a javascript function or any code.
+        - DO NOT include conversation or notes.
+        
+        {{
+          "score": 0-100, 
+          "reason": "Clear explanation", 
+          "skip": true/false,
+          "salary": "Range",
+          "currency": "INR/USD",
+          "tech_stack": ["tech found"]
+        }}
+        """
         try:
             # 30s timeout + Fallback logic
             completion = await self.nim_client.chat.completions.create(
                 model=settings.MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=256,
+                max_tokens=1024,
                 timeout=30.0
             )
-            text = re.sub(r"```json|```", "", completion.choices[0].message.content).strip()
-            return json.loads(text)
+            
+            response_text = completion.choices[0].message.content
+            if not response_text:
+                raise ValueError("Payload missing from binary stream.")
+
+            # DEBUG: Diagnostic dump for developer visibility
+            # print(f"--- [MISSION INTEL RAW] ---\n{response_text}\n--- [END INTEL] ---")
+
+            # TACTICAL: Surgical Isolation Hub
+            # We locate the FIRST '{' and the LAST '}' to isolate the candidate object
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}')
+            
+            if start_idx == -1 or end_idx == -1:
+                raise ValueError("No JSON object signature detected in stream.")
+                
+            clean_intel = response_text[start_idx:end_idx+1].strip()
+            
+            # STAGE 2: Protocol Alignment (Ultra-Resilient Multi-Pass Normalization)
+            try:
+                # Effort 1: Standard compliant JSON
+                return json.loads(clean_intel)
+            except json.JSONDecodeError:
+                # Effort 2: Tactical Python Literal Evaluation (handles True, False, None)
+                try:
+                    import ast
+                    # Map common JSON literals to Python for AST parsing
+                    p_clean = clean_intel.replace('true', 'True').replace('false', 'False').replace('null', 'None')
+                    # Strip any non-dict leading/trailing noise
+                    t_match = re.search(r'(\{.*\})', p_clean, re.DOTALL)
+                    t_str = t_match.group(1) if t_match else p_clean
+                    return ast.literal_eval(t_str)
+                except:
+                    # Effort 3: Aggressive Regex-Based Reconstruction
+                    repaired = clean_intel
+                    # A: Quote unquoted keys (e.g., score: 85 -> "score": 85)
+                    repaired = re.sub(r'([{,]\s*)([a-zA-Z0-9_\-]+)\s*:', r'\1"\2":', repaired)
+                    # B: Standardize all quotes to double (safely handle escaped internal quotes)
+                    repaired = re.sub(r"'([^']*)'", r'"\1"', repaired)
+                    # C: Remove illegal trailing commas: { "key": "val", } -> { "key": "val" }
+                    repaired = re.sub(r',\s*\}', '}', repaired)
+                    # D: Strip invisible control characters
+                    repaired = re.sub(r'[\x00-\x1F\x7F]', '', repaired)
+                    
+                    try:
+                        return json.loads(repaired)
+                    except:
+                        # STAGE 3: Surgical Property Scan (Absolute Fail-Safe)
+                        # If the JSON is structurally broken, we pull metrics via regex
+                        metrics = {"score": 0, "reason": "Surgical fallback (Syntax error).", "skip": True, "tech_stack": []}
+                        
+                        # Extract Score (Handles both unquoted and quoted variations)
+                        sc_match = re.search(r'score":?\s*(\d+)', repaired) or re.search(r'score:\s*(\d+)', repaired)
+                        if sc_match: 
+                            metrics["score"] = int(sc_match.group(1))
+                            metrics["skip"] = metrics["score"] < 40
+                            
+                        # Extract Reason (Basic attempt)
+                        re_match = re.search(r'reason":?\s*"([^"]+)"', repaired)
+                        if re_match: metrics["reason"] = re_match.group(1)
+                        
+                        return metrics
+
         except Exception as e:
             msg = str(e)
-            print(f"⚠️ AI Scoring fail (Falling back to Keyword Match): {msg}")
+            print(f"⚠️ Intelligence Logic Breach: {msg}")
             fallback = _get_keyword_score()
-            fallback["reason"] = f"AI Timeout ({msg}). Fallback: {fallback['reason']}"
+            fallback["reason"] = f"Cyber-Resilience Fallback ({msg})."
             return fallback
 
-    async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db, summary: str = "", experience: str = "") -> AsyncGenerator[str, None]:
+    async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db, summary: str = "", experience: str = "", years_of_exp: int = 0) -> AsyncGenerator[str, None]:
         from app.modules.job.model import JobRepository, JobStatus
         from app.modules.browser.session_model import ScoutSession
 
@@ -282,16 +467,15 @@ Format: {{
             db.add(scout_session); db.commit(); db.refresh(scout_session)
             yield json.dumps({"type": "thinking", "message": f"🚀 Tactical Mission #{scout_session.id} initiated."})
 
+        # PLATFORM AGGREGATION: Split multiple mission objectives
+        platforms = [p.strip().lower() for p in platform.split(",")]
+        
         session_id = scout_session.id
         
         # Diagnostic Log: Model Awareness
         model_name = settings.MODEL_NAME
         key_valid = "PRESENT" if settings.NVIDIA_API_KEY else "MISSING"
-        yield json.dumps({"type": "thinking", "message": f"🤖 AI Engine Ready (Model: {model_name}, Key: {key_valid})"})
-
-        config = PLATFORM_SEARCH_CONFIG.get(platform.lower())
-        if not config:
-            yield json.dumps({"type": "error", "message": f"Unsupported: {platform}"}); return
+        yield json.dumps({"type": "thinking", "message": f"🤖 AI Engine Ready (Model: {model_name})"})
 
         context = pw = browser = None
         try:
@@ -299,214 +483,312 @@ Format: {{
             context, pw, browser = await browser_service.connect_to_local_chrome()
             page = await context.new_page()
 
-            search_url = config["search_url"](target_role, location)
-            yield json.dumps({"type": "thinking", "message": f"🌐 Navigating to {platform.upper()}..."})
-            try:
-                # 'domcontentloaded' is enough to start analyzing; 'load' takes too long on LinkedIn
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
-            except Exception as e:
-                print(f"⚠️ Navigation warning (proceeding anyway): {e}")
+            total_saved_count = 0
+            mission_breakdown = []
+            stop_mission = False
 
-            yield json.dumps({"type": "thinking", "message": "🧠 Analyzing page content..."})
-            wait_sel = config.get("wait_selector", "")
-            if wait_sel:
-                try: await page.wait_for_selector(wait_sel, timeout=15000)
-                except: pass
-
-            yield json.dumps({"type": "thinking", "message": "📜 Scrolling..."})
-            # On LinkedIn, we must scroll the internal list container, not the window
-            if platform.lower() == "linkedin":
-                await page.evaluate("""() => {
-                    const list = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, ul.CERBSFoMEkNxNKfBpiWHVfzfLOkzUc');
-                    if (list) {
-                        for (let i=0; i<5; i++) {
-                            setTimeout(() => {
-                                list.scrollBy({ top: 1200, behavior: 'smooth' });
-                            }, i * 1500);
-                        }
-                    }
-                }""")
-                await asyncio.sleep(8.0) # More time for full hydration
-            else:
-                for i in range(4):
-                    await page.evaluate(f"window.scrollBy({{ top: {800 + i*100}, behavior: 'smooth' }})")
-                    await asyncio.sleep(1.0)
-            
-            await page.evaluate("window.scrollTo(0, 0)")
-
-            # 1. Harvest Job IDs first (handles go stale in virtual lists)
-            job_ids = []
-            for sel in config.get("job_card_selectors", []):
-                # Robust harvester: Look for LinkedIn ID, Generic ID, or Indeed Direct Key (JK)
-                harvest_script = """(sel) => {
-                    return Array.from(document.querySelectorAll(sel)).map(el => {
-                        // Direct ID matches
-                        const direct = el.getAttribute('data-occludable-job-id') || 
-                                     el.getAttribute('data-job-id') || 
-                                     el.getAttribute('data-jk');
-                        if (direct) return direct;
-                        
-                        // Indeed specific: search for jcs-JobTitle link inside
-                        const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
-                        if (link) return link.getAttribute('data-jk');
-                        
-                        return null;
-                    }).filter(id => !!id);
-                }"""
-                ids = await page.evaluate(harvest_script, sel)
-                if ids: job_ids = ids; break
-            
-            if not job_ids:
-                yield json.dumps({"type": "thinking", "message": "⚠️ 0 jobs found."})
-                db.query(ScoutSession).filter(ScoutSession.id == session_id).update({"status": "failed", "error_msg": "No jobs found"}); db.commit()
-                return
-
-            yield json.dumps({"type": "thinking", "message": f"✅ Found {len(job_ids)} jobs. Analyzing top matches..."})
-            saved_count = 0
-            is_linkedin = (platform.lower() == "linkedin")
-            current_page = 1
-            MAX_PAGES = 5 # Default fallback
-
-            # 1. Dynamically extract total pages from LinkedIn UI if available
-            if is_linkedin:
-                try:
-                    page_state_text = await page.inner_text(".jobs-search-pagination__page-state")
-                    import re
-                    match = re.search(r"Page \d+ of (\d+)", page_state_text)
-                    if match:
-                        MAX_PAGES = min(15, int(match.group(1))) # Cap at 15 for safety
-                        yield json.dumps({"type": "thinking", "message": f"📊 Mission Scope: {MAX_PAGES} pages found. Scanning entire pipeline..."})
-                except: pass
-
-            async def _check_mission_integrity():
-                """High-fidelity status pulse to ensure current mission hasn't been hijacked or stopped."""
-                db.expire_all() # Ensure we get fresh tactical data from the vault
-                fresh_session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
-                if not fresh_session or fresh_session.status != "running":
-                    print(f"🛑 Mission #{session_id} not active. Aborting task.")
-                    return False
-                if fresh_session.current_task_id != task_nonce:
-                    print(f"🛑 Mission #{session_id} hijacking detected! New task started. Terminating ghost mission.")
-                    return False
-                return True
-
-            while current_page <= MAX_PAGES:
-                if not await _check_mission_integrity(): break
-
-                if current_page > 1:
-                    yield json.dumps({"type": "thinking", "message": f"⏭️ Page {current_page-1} of {MAX_PAGES} complete. Navigating..."})
-                    
-                    # Target the next button from user's HTML
-                    next_btn = await page.query_selector(".jobs-search-pagination__button--next")
-                    if not next_btn: 
-                        yield json.dumps({"type": "thinking", "message": "📍 No more pages found."})
-                        break
-                    
-                    await next_btn.click()
-                    await asyncio.sleep(6.0) # Wait for page load and hydration
-                    
-                    # Re-harvest fresh IDs for the new page
-                    for sel in config.get("job_card_selectors", []):
-                        harvest_script = """(sel) => {
-                            return Array.from(document.querySelectorAll(sel)).map(el => {
-                                const direct = el.getAttribute('data-occludable-job-id') || 
-                                             el.getAttribute('data-job-id') || 
-                                             el.getAttribute('data-jk');
-                                if (direct) return direct;
-                                const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
-                                if (link) return link.getAttribute('data-jk');
-                                return null;
-                            }).filter(id => !!id);
-                        }"""
-                        ids = await page.evaluate(harvest_script, sel)
-                        if ids: job_ids = ids; break
-                    
-                    if not job_ids: break
-                    yield json.dumps({"type": "thinking", "message": f"✅ Found {len(job_ids)} new jobs on Page {current_page}."})
-
-                for i, job_id in enumerate(job_ids[:25]):
-                    if not await _check_mission_integrity(): break
-                    
-                    try:
-                        # 2. Re-find card by ID inside the loop (Resilience)
-                        id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], .job_{job_id}"
-                        card = await page.query_selector(id_selector)
-                        if not card: continue
-
-                        if is_linkedin:
-                            # 3. Forced Hydration
-                            await card.scroll_into_view_if_needed(timeout=3000)
-                            # Wait for either the title link OR a small timeout
-                            try: await card.wait_for_selector("a.job-card-list__title--link", timeout=2000)
-                            except: pass
-                            
-                            data = await _extract_card_data_linkedin(card)
-                        else:
-                            # 3. Hybrid Hydration Grace Period (Indeed)
-                            await asyncio.sleep(0.5) 
-                            data = await _extract_card_data_generic(card, config, location)
-
-                        title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
-                        
-                        if not title or not link:
-                            yield json.dumps({"type": "thinking", "message": f"⏭️ Skipping card {i+1}: Extraction incomplete (Hydration timeout)"})
-                            continue
-
-                        # Final URL formatting
-                        if is_linkedin:
-                            if job_id and (not link or link.startswith("/")): link = f"https://www.linkedin.com/jobs/view/{job_id}/"
-                            elif link.startswith("/"): link = "https://www.linkedin.com" + link
-                        elif platform.lower() == "indeed":
-                            if job_id and (not link or link.startswith("/")): link = f"https://in.indeed.com/viewjob?jk={job_id}"
-                            elif link.startswith("/"): link = "https://in.indeed.com" + link
-                        
-                        yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
-                        job_desc = await _get_job_detail_via_panel(page, card, job_id) if is_linkedin else f"{title} at {company} in {loc}"
-                        
-                        if not job_desc: job_desc = f"{title} at {company} in {loc}"
-                        yield json.dumps({"type": "thinking", "message": "🤖 AI is evaluating alignment with your profile..."})
-                        
-                        res = await self._score_job_with_ai(title, job_desc, skills, target_role, summary, experience)
-                        reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
-                        extracted_salary = res.get("salary", "Not specified")
-                        extracted_currency = res.get("currency", "N/A")
-                        extracted_tech = json.dumps(res.get("tech_stack", []))
-
-                        yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
-
-                        
-                        if score <= 70:
-                            yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
-                            yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
-                            continue
-
-                        if db.query(JobRepository).filter(JobRepository.url == link).first():
-                            yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
-
-                        job = JobRepository(
-                            user_id=user_id, 
-                            title=title, 
-                            company=company, 
-                            location=loc, 
-                            url=link, 
-                            platform=platform, 
-                            description=job_desc,
-                            salary=extracted_salary, 
-                            currency=extracted_currency,
-                            tech_stack=extracted_tech, 
-                            heuristic_score=score, 
-                            match_reason=reason, 
-                            status=JobStatus.NEW
-                        )
-                        db.add(job); db.commit(); db.refresh(job); saved_count += 1
-                        yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": platform}})
-
-                    except Exception as e:
-                        yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
+            for target_platform in platforms:
+                if stop_mission: break
+                yield json.dumps({"type": "thinking", "message": f"🚀 TARGET ACQUIRED: Initiating mission on {target_platform.upper()}..."})
                 
-                current_page += 1
+                config = PLATFORM_SEARCH_CONFIG.get(target_platform)
+                if not config:
+                    yield json.dumps({"type": "thinking", "message": f"⚠️ Unsupported platform: {target_platform}. Skipping node."})
+                    continue
 
-            yield json.dumps({"type": "done", "count": saved_count, "session_id": session_id})
+                if target_platform in ["naukri", "foundit"]:
+                    search_url = config["search_url"](target_role, location, years_of_exp)
+                else:
+                    search_url = config["search_url"](target_role, location)
+
+                yield json.dumps({"type": "thinking", "message": f"🌐 Navigating to {target_platform.upper()}..."})
+                try:
+                    # 'domcontentloaded' is enough to start analyzing; 'load' takes too long on LinkedIn
+                    await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+                    
+                    # TACTICAL: Freshness Calibration (Sort by Date)
+                    if target_platform == "naukri":
+                        yield json.dumps({"type": "thinking", "message": "🕒 Calibrating freshness (Sorting by Date)..."})
+                        try:
+                            await page.wait_for_selector("#filter-sort", timeout=10000)
+                            await page.evaluate('''(selector) => {
+                                const sortBtn = document.querySelector("#filter-sort");
+                                if (sortBtn && !sortBtn.innerText.includes("Date")) {
+                                    sortBtn.click();
+                                    setTimeout(() => {
+                                        const dateOption = document.querySelector('a[data-id="filter-sort-f"]');
+                                        if (dateOption) dateOption.click();
+                                    }, 500);
+                                }
+                            }''')
+                            await asyncio.sleep(4.0) # Grace period for sort re-hydration
+                        except: pass
+                except Exception as e:
+                    print(f"⚠️ Navigation warning (proceeding anyway): {e}")
+
+                yield json.dumps({"type": "thinking", "message": f"🧠 Analyzing {target_platform.upper()} content..."})
+                wait_sel = config.get("wait_selector", "")
+                if wait_sel:
+                    try: await page.wait_for_selector(wait_sel, timeout=15000)
+                    except: pass
+
+                yield json.dumps({"type": "thinking", "message": f"📜 Scrolling {target_platform.upper()} matrix..."})
+                # On LinkedIn, we must scroll the internal list container, not the window
+                if target_platform == "linkedin":
+                    await page.evaluate("""() => {
+                        const list = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, ul.CERBSFoMEkNxNKfBpiWHVfzfLOkzUc');
+                        if (list) {
+                            for (let i=0; i<5; i++) {
+                                setTimeout(() => {
+                                    list.scrollBy({ top: 1200, behavior: 'smooth' });
+                                }, i * 1500);
+                            }
+                        }
+                    }""")
+                    await asyncio.sleep(8.0) # More time for full hydration
+                else:
+                    for i in range(4):
+                        await page.evaluate(f"window.scrollBy({{ top: {800 + i*100}, behavior: 'smooth' }})")
+                        await asyncio.sleep(1.0)
+                
+                await page.evaluate("window.scrollTo(0, 0)")
+
+                # 1. Harvest Job IDs first (handles go stale in virtual lists)
+                job_ids = []
+                for sel in config.get("job_card_selectors", []):
+                    # Robust harvester: Look for LinkedIn ID, Generic ID, Indeed JK, or Foundit ID
+                    harvest_script = """(sel) => {
+                        return Array.from(document.querySelectorAll(sel)).map(el => {
+                            // Direct ID matches
+                            const direct = el.getAttribute('data-occludable-job-id') || 
+                                         el.getAttribute('data-job-id') || 
+                                         el.getAttribute('data-jk') ||
+                                         (el.classList.contains('cardContainer') || el.id.length > 5 ? el.id : null);
+                            if (direct) return direct;
+                            
+                            // Indeed specific: search for jcs-JobTitle link inside
+                            const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
+                            if (link) return link.getAttribute('data-jk');
+                            
+                            return null;
+                        }).filter(id => !!id);
+                    }"""
+                    ids = await page.evaluate(harvest_script, sel)
+                    if ids: job_ids = ids; break
+                
+                if not job_ids:
+                    yield json.dumps({"type": "thinking", "message": f"⚠️ {target_platform.upper()}: 0 jobs found."})
+                    continue
+
+                yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} jobs. Analyzing top matches..."})
+                platform_saved = 0
+                is_linkedin = (target_platform == "linkedin")
+                current_page = 1
+                MAX_PAGES = 5 # Default fallback
+
+                # 1. Dynamically extract total pages from LinkedIn UI if available
+                if is_linkedin:
+                    try:
+                        page_state_text = await page.inner_text(".jobs-search-pagination__page-state")
+                        import re
+                        match = re.search(r"Page \d+ of (\d+)", page_state_text)
+                        if match:
+                            MAX_PAGES = min(15, int(match.group(1))) # Cap at 15 for safety
+                            yield json.dumps({"type": "thinking", "message": f"📊 Mission Scope: {MAX_PAGES} pages found. Scanning entire pipeline..."})
+                    except: pass
+
+                async def _check_mission_integrity():
+                    """High-fidelity status pulse to ensure current mission hasn't been hijacked or stopped."""
+                    db.expire_all() # Ensure we get fresh tactical data from the vault
+                    fresh_session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
+                    if not fresh_session or fresh_session.status != "running":
+                        print(f"🛑 Mission #{session_id} not active. Aborting task.")
+                        return False
+                    if fresh_session.current_task_id != task_nonce:
+                        print(f"🛑 Mission #{session_id} hijacking detected! New task started. Terminating ghost mission.")
+                        return False
+                    return True
+
+                while current_page <= MAX_PAGES:
+                    if not await _check_mission_integrity() or stop_mission: break
+
+                    if current_page > 1:
+                        yield json.dumps({"type": "thinking", "message": f"⏭️ {target_platform.upper()}: Page {current_page-1} complete. Navigating..."})
+                        
+                        # PLATFORM-SPECIFIC NAVIGATION MATRIX
+                        next_btn = None
+                        if target_platform == "linkedin":
+                            next_btn = await page.query_selector(".jobs-search-pagination__button--next")
+                        elif target_platform == "naukri":
+                            # Target the styled 'Next' button from user's provided HTML
+                            next_btn = await page.query_selector("a.styles_btn-secondary__2AsIP:has-text('Next')")
+                            if not next_btn:
+                                # Fallback: Search for any link containing the 'Next' span text
+                                next_btn = await page.query_selector("a:has(span:text('Next'))")
+                        elif target_platform == "foundit":
+                            next_btn = await page.query_selector(".pagination .arrow-right") or await page.query_selector(".mqfisrp-right-arrow")
+                        
+                        if not next_btn: 
+                            yield json.dumps({"type": "thinking", "message": f"📍 {target_platform.upper()}: No more pages found."})
+                            break
+                        
+                        await next_btn.click()
+                        # EXTENDED HYDRATION: Allow full page transition and data-saturation
+                        await asyncio.sleep(8.0) 
+                        
+                        # TACTICAL: Re-calibrate freshness on the new page if needed
+                        if target_platform == "naukri":
+                             await page.evaluate('''(selector) => {
+                                const sortBtn = document.querySelector("#filter-sort");
+                                if (sortBtn && !sortBtn.innerText.includes("Date")) {
+                                    sortBtn.click();
+                                    setTimeout(() => {
+                                        const dateOption = document.querySelector('a[data-id="filter-sort-f"]');
+                                        if (dateOption) dateOption.click();
+                                    }, 500);
+                                }
+                            }''')
+                             await asyncio.sleep(2.0)
+                        
+                        # Re-harvest fresh IDs for the new page
+                        for sel in config.get("job_card_selectors", []):
+                            harvest_script = """(sel) => {
+                                return Array.from(document.querySelectorAll(sel)).map(el => {
+                                    const direct = el.getAttribute('data-occludable-job-id') || 
+                                                 el.getAttribute('data-job-id') || 
+                                                 el.getAttribute('data-jk') ||
+                                                 (el.classList.contains('cardContainer') || el.id.length > 5 ? el.id : null);
+                                    if (direct) return direct;
+                                    const link = el.querySelector('a.jcs-JobTitle, a[data-jk]');
+                                    if (link) return link.getAttribute('data-jk');
+                                    return null;
+                                }).filter(id => !!id);
+                            }"""
+                            ids = await page.evaluate(harvest_script, sel)
+                            if ids: job_ids = ids; break
+                        
+                        if not job_ids: break
+                        yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} new jobs on Page {current_page}."})
+
+                    for i, job_id in enumerate(job_ids[:25]):
+                        if not await _check_mission_integrity() or stop_mission: break
+                        
+                        try:
+                            # 2. Re-find card by ID inside the loop (Resilience)
+                            # Note: We include [id='{job_id}'] for Foundit/standard ID support
+                            id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], [id='{job_id}'], .job_{job_id}"
+                            card = await page.query_selector(id_selector)
+                            if not card and job_id.isdigit():
+                                card = await page.get_by_id(job_id).first()
+                            
+                            if not card: continue
+
+                            if is_linkedin:
+                                # 3. Forced Hydration
+                                await card.scroll_into_view_if_needed(timeout=3000)
+                                # Wait for either the title link OR a small timeout
+                                try: await card.wait_for_selector("a.job-card-list__title--link", timeout=2000)
+                                except: pass
+                                
+                                data = await _extract_card_data_linkedin(card)
+                            else:
+                                # 3. Hybrid Hydration Grace Period (Indeed)
+                                await asyncio.sleep(0.5) 
+                                data = await _extract_card_data_generic(card, config, location)
+
+                            title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
+                            
+                            # TACTICAL: Allow missing links for SPA platforms (Foundit)
+                            if not title or (not link and target_platform != "foundit"):
+                                yield json.dumps({"type": "thinking", "message": f"⏭️ Skipping card {i+1}: Extraction incomplete (Hydration timeout)"})
+                                continue
+
+                            # Final URL formatting
+                            if is_linkedin:
+                                if job_id and (not link or link.startswith("/")): link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                                elif link.startswith("/"): link = "https://www.linkedin.com" + link
+                            elif target_platform == "indeed":
+                                if job_id and (not link or link.startswith("/")): link = f"https://in.indeed.com/viewjob?jk={job_id}"
+                                elif link.startswith("/"): link = "https://in.indeed.com" + link
+                            elif target_platform == "foundit":
+                                if job_id and (not link or link.startswith("/")): link = f"https://www.foundit.in/job-details/{job_id}"
+                                elif link.startswith("/"): link = "https://www.foundit.in" + link
+                            
+                            yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
+                            
+                            raw_job_desc = ""
+                            if is_linkedin or target_platform == "foundit":
+                                raw_job_desc = await _get_job_detail_via_panel(page, card, job_id)
+                            elif target_platform == "naukri":
+                                yield json.dumps({"type": "thinking", "message": f"🔍 Accessing full JD on {target_platform.upper()}..."})
+                                raw_job_desc = await self._get_job_detail_via_popup(context, page, card, target_platform)
+                            
+                            # Fallback for empty/failed panel or popup
+                            if not raw_job_desc:
+                                raw_job_desc = data.get("description") or f"{title} at {company} in {loc}"
+                            
+                            # Enrich with extracted tags if available
+                            tags = data.get("tags")
+                            job_desc = f"{raw_job_desc} \n\n TECHNICAL TAGS: {tags}" if tags else raw_job_desc
+                            
+                            print(f"DEBUG: Extracted JD for AI Analysis (Len: {len(job_desc)}): |{job_desc[:150]}...|")
+                            
+                            if not job_desc: job_desc = f"{title} at {company} in {loc}"
+                            
+                            res = await self._score_job_with_ai(title, job_desc, skills, target_role, summary, experience, years_of_exp)
+                            reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
+                            
+                            posted_at = data.get("posted_at", "").lower()
+                            if any(x in posted_at for x in ["3 day", "4 day", "5 day", "6 day", "7 day", "10 day", "15 day", "20 day", "25 day", "30+ day", "month ago"]):
+                                yield json.dumps({"type": "thinking", "message": f"🛡️ Freshness Cut-off Protocol engaged. Found lead from '{posted_at}'. Terminating mission..."})
+                                stop_mission = True
+                                break # Surgical exit to preserve mission purity
+                            
+                            extracted_salary = res.get("salary", "Not specified")
+                            extracted_currency = res.get("currency", "N/A")
+                            extracted_tech = json.dumps(res.get("tech_stack", []))
+
+                            yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
+
+                            
+                            if score <= 70:
+                                yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
+                                yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
+                                continue
+
+                            if db.query(JobRepository).filter(JobRepository.url == link).first():
+                                yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
+
+                            job = JobRepository(
+                                user_id=user_id, 
+                                title=title, 
+                                company=company, 
+                                location=loc, 
+                                url=link, 
+                                platform=target_platform, 
+                                description=job_desc,
+                                salary=extracted_salary, 
+                                currency=extracted_currency,
+                                tech_stack=extracted_tech, 
+                                heuristic_score=score, 
+                                match_reason=reason, 
+                                status=JobStatus.NEW
+                            )
+                            db.add(job); db.commit(); db.refresh(job); platform_saved += 1; total_saved_count += 1
+                            yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
+
+                        except Exception as e:
+                            yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
+                    
+                    current_page += 1
+                
+                mission_breakdown.append({
+                    "platform": target_platform.capitalize(),
+                    "logo": f"https://www.google.com/s2/favicons?domain={target_platform.lower()}.com&sz=128",
+                    "count": platform_saved
+                })
+
+            yield json.dumps({"type": "done", "count": total_saved_count, "session_id": session_id})
 
         except Exception as e:
             err = str(e)
@@ -518,11 +800,9 @@ Format: {{
             try:
                 session = db.query(ScoutSession).filter(ScoutSession.id == session_id).first()
                 if session and session.status == "running":
-                    platform_name = "Linkedin" if platform.lower() == "linkedin" else platform.capitalize()
-                    final_breakdown = [{"platform": platform_name, "logo": f"https://www.google.com/s2/favicons?domain={platform.lower()}.com&sz=128", "count": saved_count}]
                     session.status = "completed"
-                    session.total_jobs = saved_count
-                    session.breakdown = final_breakdown
+                    session.total_jobs = total_saved_count
+                    session.breakdown = mission_breakdown
                     db.commit()
                 print(f"✅ Mission resource recovery pulse: Session #{session_id} cleaned up.")
             except Exception as commit_err:

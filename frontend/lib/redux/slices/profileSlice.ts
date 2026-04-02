@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { userService, UserContext } from '@/lib/services/user-service';
+import { userService, UserContext, ProfileInsights } from '@/lib/services/user-service';
 
 export const fetchProfile = createAsyncThunk(
   'profile/fetchProfile',
@@ -9,14 +9,16 @@ export const fetchProfile = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
-  },
-  {
-    condition: (_, { getState }) => {
-      const { profile } = getState() as any;
-      if (profile.context && !profile.error) {
-        return false;
-      }
-      return true;
+  }
+);
+
+export const fetchInsights = createAsyncThunk(
+  'profile/fetchInsights',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await userService.getInsights();
+    } catch (err: any) {
+      return rejectWithValue(err.message);
     }
   }
 );
@@ -36,13 +38,17 @@ export const updatePlatformStatus = createAsyncThunk(
 
 interface ProfileState {
   context: UserContext | null;
+  insights: ProfileInsights | null;
   isLoading: boolean;
+  insightsLoading: boolean;
   error: string | null;
 }
 
 const initialState: ProfileState = {
   context: null,
+  insights: null,
   isLoading: false,
+  insightsLoading: false,
   error: null,
 };
 
@@ -62,6 +68,16 @@ const profileSlice = createSlice({
       .addCase(fetchProfile.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+      })
+      .addCase(fetchInsights.pending, (state) => {
+        state.insightsLoading = true;
+      })
+      .addCase(fetchInsights.fulfilled, (state, action) => {
+        state.insightsLoading = false;
+        state.insights = action.payload;
+      })
+      .addCase(fetchInsights.rejected, (state) => {
+        state.insightsLoading = false;
       })
       .addCase(updatePlatformStatus.fulfilled, (state, action) => {
         state.context = action.payload;

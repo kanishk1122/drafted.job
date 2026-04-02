@@ -147,7 +147,8 @@ async def _scout_generator(request: Request, user_email: str, platform: str, tar
         skills=skills,
         db=db,
         summary=summary,
-        experience=experience_text
+        experience=experience_text,
+        years_of_exp=int(user.years_of_experience or 0) # Tactical rounding for platform filters
     ):
         if await request.is_disconnected():
             print(f"🛑 Client disconnected. Aborting session for {user_email}")

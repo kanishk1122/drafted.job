@@ -21,10 +21,27 @@ export interface UserContext {
   active_platforms: string[];
 }
 
+export interface ProfileInsights {
+  profile_authority: number;
+  authority_boost: string;
+  authority_recommendation: string;
+  market_demand: {
+    label: string;
+    status: string;
+    color: string;
+  }[];
+}
+
 class UserService extends ApiService {
   async getContext(): Promise<UserContext> {
     // Use /user/me (cookie-authenticated) to get the correct logged-in user
     return this.request<UserContext>("/user/me", {
+      method: "GET",
+    });
+  }
+
+  async getInsights(): Promise<ProfileInsights> {
+    return this.request<ProfileInsights>("/user/insights", {
       method: "GET",
     });
   }

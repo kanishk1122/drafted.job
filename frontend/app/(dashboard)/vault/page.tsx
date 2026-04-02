@@ -6,21 +6,23 @@ import CommandControls from "@/components/vault/CommandControls";
 import JobIntelList from "@/components/vault/JobIntelList";
 import MissionDetailedReadout from "@/components/vault/MissionDetailedReadout";
 import { useAppDispatch, useAppSelector, RootState } from "@/lib/redux/store";
-import { fetchJobs, incrementOffset, fetchJobDetail, setSelectedJobId } from "@/lib/redux/slices/jobSlice";
+import { fetchJobs, incrementOffset, fetchJobDetail, setSelectedJobId, resetJobs } from "@/lib/redux/slices/jobSlice";
 import { JobSummary } from "@/lib/services/job-service";
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft } from "lucide-react";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { useSearchParams } from "next/navigation";
 
 export default function VaultPage() {
+   const searchParams = useSearchParams();
    const dispatch = useAppDispatch();
    const { jobs, fullJobs, loading, detailLoading, hasMore, offset, selectedJobId } = useAppSelector((state: RootState) => state.job);
    const selectedJob = selectedJobId ? fullJobs[selectedJobId] : null;
 
    const [selectedPlatform, setSelectedPlatform] = React.useState<string>("ALL");
+   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL");
    const [searchQuery, setSearchQuery] = React.useState("");
    const debouncedSearch = useDebounce(searchQuery, 300);
    const [showFilters, setShowFilters] = React.useState(true);
@@ -37,21 +39,37 @@ export default function VaultPage() {
        dispatch(incrementOffset(20));
        dispatch(fetchJobs({ 
          platform: selectedPlatform, 
+         status: selectedStatus === "ALL" ? undefined : selectedStatus.toLowerCase(),
          limit: 20, 
          offset: offset + 20,
          sort_by: "newest"
        }));
      }
-   }, [dispatch, loading, hasMore, selectedPlatform, offset]);
+   }, [dispatch, loading, hasMore, selectedPlatform, selectedStatus, offset]);
+
+   // HANDLE DEEP LINKING: Select job from URL if present
+   React.useEffect(() => {
+      const urlJobId = searchParams.get("jobId");
+      if (urlJobId) {
+         const id = parseInt(urlJobId);
+         if (!isNaN(id)) {
+            dispatch(setSelectedJobId(id));
+            dispatch(fetchJobDetail(id));
+         }
+      }
+   }, [searchParams, dispatch]);
 
    React.useEffect(() => {
+     // SURGICAL RESET: Clear current vault cache before ingesting new platform/status telemetry
+     dispatch(resetJobs());
      dispatch(fetchJobs({ 
        platform: selectedPlatform, 
+       status: selectedStatus === "ALL" ? undefined : selectedStatus.toLowerCase(),
        limit: 20, 
        offset: 0,
        sort_by: "newest"
      }));
-   }, [dispatch, selectedPlatform]);
+   }, [dispatch, selectedPlatform, selectedStatus]);
 
    const handleDraftCL = () => {
       setIsDraftingCL(true);
@@ -67,6 +85,7 @@ export default function VaultPage() {
    );
 
    const platforms = ["ALL", "LINKEDIN", "NAUKRI", "INDEED"];
+   const statuses = ["ALL", "NEW", "APPLIED", "INTERVIEW", "REJECTED"];
 
    return (
       <div className="flex flex-col h-full bg-background/40 backdrop-blur-md rounded-[2.5rem] border-2 border-border/40 overflow-hidden shadow-2xl relative">
@@ -77,6 +96,9 @@ export default function VaultPage() {
                platforms={platforms}
                selectedPlatform={selectedPlatform}
                setSelectedPlatform={setSelectedPlatform}
+               statuses={statuses}
+               selectedStatus={selectedStatus}
+               setSelectedStatus={setSelectedStatus}
                showFilters={showFilters}
                setShowFilters={setShowFilters}
                searchQuery={searchQuery}

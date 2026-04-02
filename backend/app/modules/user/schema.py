@@ -21,6 +21,7 @@ class UserUpdate(BaseModel):
     target_roles: Optional[str] = None
     skills: Optional[str] = None
     salary_floor: Optional[float] = None
+    years_of_experience: Optional[float] = None
     linkedin_email: Optional[str] = None
     linkedin_active: Optional[bool] = None
     naukri_email: Optional[str] = None

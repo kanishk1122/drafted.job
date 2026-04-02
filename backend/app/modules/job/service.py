@@ -22,8 +22,20 @@ class JobService:
         db.commit()
         db.refresh(job)
         return job
-    def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, sort_by: str = "newest", limit: int = 50, offset: int = 0):
-        query = db.query(JobRepository).filter(JobRepository.user_id == user_id)
+        
+    def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, q: Optional[str] = None, sort_by: str = "newest", limit: int = 50, offset: int = 0):
+        query = db.query(JobRepository).filter(
+            JobRepository.user_id == user_id,
+            JobRepository.is_active == True
+        )
+        
+        if q:
+            from sqlalchemy import or_
+            query = query.filter(or_(
+                JobRepository.title.ilike(f"%{q}%"),
+                JobRepository.company.ilike(f"%{q}%"),
+                JobRepository.location.ilike(f"%{q}%")
+            ))
         
         if status:
             query = query.filter(JobRepository.status == status)
@@ -70,5 +82,19 @@ class JobService:
             "manual_apps": applied,
             "interviews": interviews
         }
+
+    def delete_job(self, db: Session, user_id: int, job_id: int):
+        """Surgically deactivate a mission record in the private vault."""
+        job = db.query(JobRepository).filter(
+            JobRepository.id == job_id,
+            JobRepository.user_id == user_id
+        ).first()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job record not found")
+        
+        job.is_active = False
+        db.commit()
+        return {"status": "success", "id": job_id}
 
 job_service = JobService()

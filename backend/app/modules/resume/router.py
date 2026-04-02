@@ -101,6 +101,10 @@ async def upload_resume(
         if not user.target_roles and data.get("experience"):
             first_exp = data.get("experience")[0]
             user.target_roles = first_exp.get("role") or first_exp.get("title")
+        
+        # Save seniority for platform search calibration
+        if data.get("total_years_of_experience"):
+            user.years_of_experience = data.get("total_years_of_experience")
             
         db.commit()
 
@@ -179,6 +183,8 @@ async def sync_resume_data(
             user.skills = ", ".join(data["skills"][:15])
         if "summary" in data:
             user.summary = data["summary"]
+        if "total_years_of_experience" in data:
+            user.years_of_experience = data["total_years_of_experience"]
         db.commit()
 
     def safe_json_load(val):

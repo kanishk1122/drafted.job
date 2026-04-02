@@ -15,6 +15,7 @@ def list_jobs(
     status: Optional[JobStatus] = None, 
     platform: Optional[str] = None,
     min_score: int = 0,
+    q: Optional[str] = None,
     sort_by: str = "newest",
     limit: int = 50, 
     offset: int = 0, 
@@ -25,7 +26,7 @@ def list_jobs(
     Retrieve lightweight job summaries for list/kanban views.
     Only returns essential fields — no description, tech_stack, or match_reason.
     """
-    return job_service.list_jobs(db, current_user.id, status, platform, min_score, sort_by, limit, offset)
+    return job_service.list_jobs(db, current_user.id, status, platform, min_score, q, sort_by, limit, offset)
 
 @router.post("/", response_model=JobSchema)
 def create_manual_job(
@@ -38,6 +39,16 @@ def create_manual_job(
     Allows for high-fidelity tracking of non-automated scouting results.
     """
     return job_service.create_manual_job(db, current_user.id, job_data)
+
+@router.get("/metrics", response_model=JobMetricsSchema)
+def get_job_metrics(
+    db: Session = Depends(get_db),
+    current_user: UserContext = Depends(get_current_user)
+):
+    """
+    Analyze job search performance metrics and success rates for the authenticated user.
+    """
+    return job_service.get_job_metrics(db, current_user.id)
 
 @router.get("/{job_id}", response_model=JobSchema)
 def get_job(
@@ -66,12 +77,13 @@ def update_job_status(
     """
     return job_service.update_job_status(db, current_user.id, job_id, status)
 
-@router.get("/metrics", response_model=JobMetricsSchema)
-def get_job_metrics(
+@router.delete("/{job_id}")
+def delete_job(
+    job_id: int,
     db: Session = Depends(get_db),
     current_user: UserContext = Depends(get_current_user)
 ):
     """
-    Analyze job search performance metrics and success rates for the authenticated user.
+    Surgically remove a mission record from the private vault.
     """
-    return job_service.get_job_metrics(db, current_user.id)
+    return job_service.delete_job(db, current_user.id, job_id)

@@ -8,12 +8,36 @@ import Link from "next/link";
 
 // Full registry of supported platforms
 const PLATFORM_REGISTRY: Record<string, { name: string; icon: React.ReactNode; color: string }> = {
-  linkedin:    { name: "LinkedIn",   icon: <Link2 className="w-4 h-4" />, color: "text-[#0A66C2]" },
-  naukri:      { name: "Naukri",     icon: <Globe className="w-4 h-4" />, color: "text-yellow-500" },
-  indeed:      { name: "Indeed",     icon: <Globe className="w-4 h-4" />, color: "text-[#2164f3]" },
-  foundit:     { name: "Foundit",    icon: <Globe className="w-4 h-4" />, color: "text-purple-400" },
-  glassdoor:   { name: "Glassdoor",  icon: <Globe className="w-4 h-4" />, color: "text-green-400" },
-  ambitionbox: { name: "AmbitionBox",icon: <Globe className="w-4 h-4" />, color: "text-blue-400" },
+  linkedin: { 
+    name: "LinkedIn", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=linkedin.com&sz=128" alt="LinkedIn" className="w-4 h-4 object-contain" />, 
+    color: "text-[#0A66C2]" 
+  },
+  naukri: { 
+    name: "Naukri", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=naukri.com&sz=128" alt="Naukri" className="w-4 h-4 object-contain" />, 
+    color: "text-[#FF7555]" 
+  },
+  indeed: { 
+    name: "Indeed", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=indeed.com&sz=128" alt="Indeed" className="w-4 h-4 object-contain" />, 
+    color: "text-[#2164f3]" 
+  },
+  foundit: { 
+    name: "Foundit", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=foundit.in&sz=128" alt="Foundit" className="w-4 h-4 object-contain" />, 
+    color: "text-[#7B3FE4]" 
+  },
+  glassdoor: { 
+    name: "Glassdoor", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=glassdoor.com&sz=128" alt="Glassdoor" className="w-4 h-4 object-contain" />, 
+    color: "text-[#0CAA41]" 
+  },
+  ambitionbox: { 
+    name: "AmbitionBox", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=ambitionbox.com&sz=128" alt="AmbitionBox" className="w-4 h-4 object-contain" />, 
+    color: "text-[#1C4E80]" 
+  },
 };
 
 interface InitiationViewProps {
@@ -21,8 +45,8 @@ interface InitiationViewProps {
   setTargetRole: (v: string) => void;
   location: string;
   setLocation: (v: string) => void;
-  platform: string;
-  setPlatform: (v: string) => void;
+  selectedPlatforms: string[];
+  togglePlatform: (v: string) => void;
   activePlatforms: string[];  // from backend — only connected platforms
   onAbort: () => void;
   onExecute: () => void;
@@ -31,7 +55,7 @@ interface InitiationViewProps {
 export function InitiationView({
   targetRole, setTargetRole,
   location, setLocation,
-  platform, setPlatform,
+  selectedPlatforms, togglePlatform,
   activePlatforms,
   onAbort, onExecute
 }: InitiationViewProps) {
@@ -53,10 +77,10 @@ export function InitiationView({
           </div>
         </div>
         <h2 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter text-foreground relative z-10">
-          Begin Search
+          Start Search
         </h2>
         <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] relative z-10">
-          AI will control your local Chrome
+          AI Assistant will find jobs for you
         </p>
       </div>
 
@@ -88,7 +112,7 @@ export function InitiationView({
           {/* Location */}
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
-              Operation Zone
+              Search Location
             </label>
             <div className="relative group/input">
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within/input:text-primary transition-colors duration-300" />
@@ -104,39 +128,37 @@ export function InitiationView({
           {/* Platform */}
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
-              Target Network
+              Job Websites
             </label>
-            {activePlatforms.length === 0 ? (
-              <Link href="/connect" className="flex items-center gap-2 h-14 px-4 rounded-xl border-2 border-dashed border-yellow-500/30 bg-yellow-500/5 text-yellow-500 text-xs font-black uppercase tracking-widest hover:bg-yellow-500/10 transition-all">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                No networks connected — Click to Connect
-              </Link>
-            ) : (
-              <div className={`grid gap-2 h-14 p-1 rounded-xl border-2 border-border/60 bg-background/50`}
-                   style={{ gridTemplateColumns: `repeat(${Math.min(activePlatforms.length, 3)}, 1fr)` }}>
-                {activePlatforms.map(pid => {
+              <div className="flex flex-wrap gap-2.5 min-h-[3.5rem] p-2.5 rounded-xl border-2 border-border/60 bg-background/50">
+                {Object.keys(PLATFORM_REGISTRY).map(pid => {
                   const cfg = PLATFORM_REGISTRY[pid];
-                  if (!cfg) return null;
+                  const isActive = activePlatforms.includes(pid);
+                  const isSelected = selectedPlatforms.includes(pid);
+
                   return (
-                    <button
-                      key={pid}
-                      onClick={() => setPlatform(pid)}
-                      className={cn(
-                        "flex items-center justify-center gap-1.5 rounded-lg font-black text-[10px] sm:text-xs uppercase tracking-wider transition-all duration-300",
-                        platform === pid
-                          ? "bg-primary text-primary-foreground shadow-md"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                      )}
-                    >
-                      <span className={platform === pid ? "text-primary-foreground" : cfg.color}>
-                        {cfg.icon}
-                      </span>
-                      {cfg.name}
-                    </button>
+                    <div key={pid} className="flex-1 min-w-[100px] flex flex-col gap-1">
+                      <button
+                        onClick={() => isActive ? togglePlatform(pid) : (window.location.href = "/connect")}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-2 h-11 px-3 rounded-lg font-black text-[10px] uppercase tracking-wider transition-all duration-300 border-2 relative",
+                          isActive 
+                            ? isSelected 
+                              ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20" 
+                              : "bg-background/40 text-muted-foreground hover:text-foreground hover:bg-muted/50 border-border/40"
+                            : "bg-muted/10 text-muted-foreground/30 border-dashed border-border/20 grayscale opacity-40 cursor-help"
+                        )}
+                      >
+                        <span className={cn("shrink-0", (isActive && isSelected) ? "text-primary-foreground" : isActive ? cfg.color : "text-muted-foreground/40")}>
+                          {cfg.icon}
+                        </span>
+                        <span className="truncate">{cfg.name}</span>
+                        {!isActive && <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/3 bg-background border border-border px-1 rounded text-[6px] font-black uppercase text-muted-foreground">Offline</div>}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-            )}
           </div>
         </div>
       </div>
@@ -152,33 +174,33 @@ export function InitiationView({
         </Button>
 
         <div className="flex-[2] relative group/btn">
-          <Button
-            onClick={onExecute}
-            disabled={!targetRole.trim()}
-            className="h-14 w-full bg-primary hover:bg-primary/90 text-primary-foreground text-[10px] font-black uppercase tracking-[0.3em] rounded-2xl shadow-[0_10px_40px_rgba(var(--primary-rgb),0.4)] relative z-10 transition-all disabled:opacity-50 disabled:shadow-none"
-          >
-            LAUNCH SCOUT <ChevronRight size={18} className="ml-2" />
-          </Button>
+            <Button
+              onClick={onExecute}
+              disabled={!targetRole.trim() || selectedPlatforms.length === 0}
+              className="h-14 w-full bg-primary hover:bg-primary/90 text-primary-foreground text-[10px] font-black uppercase tracking-[0.3em] rounded-2xl shadow-[0_10px_40px_rgba(var(--primary-rgb),0.4)] relative z-10 transition-all disabled:opacity-50 disabled:shadow-none"
+            >
+              START SEARCH <ChevronRight size={18} className="ml-2" />
+            </Button>
           {/* Button Tubelight Effect */}
           <div className="absolute inset-x-6 bottom-[1px] h-[2px] bg-white/60 opacity-0 group-hover/btn:opacity-100 transition-opacity blur-[2px] z-20 pointer-events-none" />
         </div>
       </div>
 
-      {/* HUD Readout */}
+      {/* System Readout */}
       <div className="flex items-center justify-center gap-8 w-full pt-4 shrink-0 border-t border-border/20">
         <div className="text-center flex flex-col items-center">
-          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Engine</p>
-          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-foreground">NVIDIA NIM</div>
+          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Technology</p>
+          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-foreground">AI Intelligence</div>
         </div>
         <div className="h-6 w-[1px] bg-border/40" />
         <div className="text-center flex flex-col items-center">
-          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Browser</p>
-          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-foreground uppercase">Local Chrome</div>
+          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Scanning</p>
+          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-foreground uppercase">Local Browser</div>
         </div>
         <div className="h-6 w-[1px] bg-border/40" />
         <div className="text-center flex flex-col items-center">
-          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Zone</p>
-          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-primary uppercase">{location || "GLOBAL"}</div>
+          <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-1">Region</p>
+          <div className="px-3 py-1 bg-muted/30 rounded-full border border-border/40 text-[9px] font-black text-primary uppercase">{location || "WORLDWIDE"}</div>
         </div>
       </div>
     </motion.div>

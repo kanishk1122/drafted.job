@@ -115,14 +115,22 @@ class BrowserService:
             context, pw, browser = await self.connect_to_local_chrome()
             
             is_active = False
+            cookies = await context.cookies()
+            
             if platform_key == "linkedin":
-                cookies = await context.cookies()
                 is_active = any(c['name'] == 'li_at' for c in cookies)
             elif platform_key == "naukri":
-                cookies = await context.cookies()
-                is_active = any(c['name'] == 'naukri_node_id' or c['name'] == 'S' for c in cookies)
+                # Expanded Naukri Session Vector: checking multiple core recruitment identifiers
+                session_keys = {'S', 'n_vid', 'cticket', 'nauk_at', 'nauk_sid', 'nauk_otl'}
+                is_active = any(c['name'] in session_keys for c in cookies)
+            elif platform_key == "foundit":
+                # Foundit Session Vector using user-specified signals
+                is_active = any(c['name'] in ['_uetsid', '_uetvid'] for c in cookies)
+            elif platform_key == "indeed":
+                # Indeed High-Volume Signal
+                is_active = any(c['name'] in ['CTK', 'INDEED_CSRF_TOKEN'] for c in cookies)
             else:
-                is_active = True 
+                is_active = len(cookies) > 0 # General heuristic for other nodes
 
             return is_active
         except Exception as e:

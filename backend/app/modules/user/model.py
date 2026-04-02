@@ -13,6 +13,7 @@ class UserContext(Base):
     target_roles = Column(Text)  # Comma-separated or JSON
     skills = Column(Text)        # Comma-separated or JSON
     salary_floor = Column(Float)
+    years_of_experience = Column(Float, default=0.0)
     resume_text = Column(Text)
     
     # Platform status and credentials

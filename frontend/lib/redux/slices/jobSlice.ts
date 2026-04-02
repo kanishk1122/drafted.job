@@ -55,9 +55,12 @@ export const fetchJobs = createAsyncThunk(
       const lastFetched = job.lastFetchedByPlatform[platform];
       const now = Date.now();
       
-      // If we already have jobs and it's been less than 5 minutes, skip
-      if (lastFetched && (now - lastFetched < 300000) && job.jobs.length > 0) {
-        return false;
+      // SMART CACHE: If it's a fresh load (offset 0), only skip if data is extremely fresh (< 10s)
+      if ((params.offset || 0) === 0) {
+        if (lastFetched && (now - lastFetched < 10000) && job.jobs.length > 0) {
+          return false;
+        }
+        return true;
       }
       return true;
     }
@@ -103,6 +106,17 @@ export const fetchJobMetrics = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       return await jobService.getJobMetrics();
+    } catch (err: any) {
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
+export const deleteJob = createAsyncThunk(
+  "job/deleteJob",
+  async (jobId: number, { rejectWithValue }) => {
+    try {
+      return await jobService.deleteJob(jobId);
     } catch (err: any) {
       return rejectWithValue(err.message);
     }
@@ -166,6 +180,14 @@ const jobSlice = createSlice({
       })
       .addCase(fetchJobDetail.rejected, (state) => {
         state.detailLoading = false;
+      })
+      .addCase(deleteJob.fulfilled, (state, action) => {
+        const id = action.payload.id;
+        state.jobs = state.jobs.filter((j) => j.id !== id);
+        delete state.fullJobs[id];
+        if (state.selectedJobId === id) {
+          state.selectedJobId = null;
+        }
       })
       .addCase(updateJobStatus.fulfilled, (state, action) => {
         // Track the old status for accurate metric adjustment

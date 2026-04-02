@@ -46,6 +46,30 @@ async def get_recommendations(db: Session = Depends(get_db), access_token: str =
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+
+class EnhanceResumeRequest(BaseModel):
+    user_id: Optional[int] = None
+    section: str
+    instructions: str
+    current_data: Dict[str, Any]
+
+@router.post("/enhance-resume")
+async def enhance_resume(request: EnhanceResumeRequest):
+    """
+    Surgically refine a specific resume section using AI intelligence directives.
+    """
+    try:
+        updated_data = await ai_service.enhance_resume_content(
+            section=request.section,
+            instructions=request.instructions,
+            current_data=request.current_data
+        )
+        return {"enhanced_data": updated_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Enhancement failure: {str(e)}")
+
 @router.post("/recommendations/refresh")
 async def refresh_recommendations(db: Session = Depends(get_db), access_token: str = Cookie(None)):
     """

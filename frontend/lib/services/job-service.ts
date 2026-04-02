@@ -38,6 +38,7 @@ export interface JobFilterParams {
   status?: string;
   platform?: string;
   min_score?: number;
+  q?: string;
   sort_by?: string;
   limit?: number;
   offset?: number;
@@ -62,6 +63,7 @@ class JobService extends ApiService {
     if (params.status) queryParts.push(`status=${params.status}`);
     if (params.platform) queryParts.push(`platform=${params.platform}`);
     if (params.min_score !== undefined) queryParts.push(`min_score=${params.min_score}`);
+    if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
     if (params.sort_by) queryParts.push(`sort_by=${params.sort_by}`);
     if (params.limit !== undefined) queryParts.push(`limit=${params.limit}`);
     if (params.offset !== undefined) queryParts.push(`offset=${params.offset}`);
@@ -89,6 +91,12 @@ class JobService extends ApiService {
     return this.request<Job>("/jobs/", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteJob(jobId: number): Promise<{ status: string; id: number }> {
+    return this.request<{ status: string; id: number }>(`/jobs/${jobId}`, {
+      method: "DELETE",
     });
   }
 }

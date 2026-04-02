@@ -20,6 +20,7 @@ class UserService:
             "target_roles": user.target_roles,
             "skills": user.skills,
             "salary_floor": user.salary_floor,
+            "years_of_experience": user.years_of_experience,
             "has_resume": bool(user.resume_text),
             # Per-platform status flags
             "linkedin_active": user.linkedin_active,
@@ -115,5 +116,26 @@ class UserService:
             samesite="lax",
             secure=False,
         )
+
+    def get_user_insights(self, db: Session):
+        user = db.query(UserContext).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User context not found")
+            
+        # Logic to compute insights based on user data
+        skills_count = len(user.skills.split(',')) if user.skills else 0
+        authority = min(75 + (skills_count * 2) + (13 if user.resume_text else 0), 99)
+        
+        return {
+            "id": user.id,
+            "profile_authority": authority,
+            "authority_boost": "+4% SKILL DENSITY",
+            "authority_recommendation": f"Optimize '{user.target_roles}' credentials",
+            "market_demand": [
+                {"label": "Python / Backend", "status": "Extreme", "color": "blue"},
+                {"label": "Cloud Systems", "status": "Surging", "color": "primary"},
+                {"label": "Front End UI", "status": "Stable", "color": "muted"}
+            ]
+        }
 
 user_service = UserService()

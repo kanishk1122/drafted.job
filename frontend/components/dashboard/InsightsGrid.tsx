@@ -38,7 +38,26 @@ function InsightMiniCard({ label, value, icon, color }: any) {
   );
 }
 
+import { useAppSelector } from "@/lib/redux/store";
+
 export function InsightsGrid() {
+  const { insights, insightsLoading } = useAppSelector((state) => state.profile);
+
+  if (insightsLoading && !insights) {
+    return (
+      <div className="h-64 flex items-center justify-center bg-card/20 rounded-3xl border border-border/40 animate-pulse">
+        <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Decrypting Insights...</span>
+      </div>
+    );
+  }
+
+  const authority = insights?.profile_authority || 0;
+  const marketDemand = insights?.market_demand || [
+     { label: "Python / Backend", status: "Extreme", color: "blue" },
+     { label: "Cloud Systems", status: "Surging", color: "primary" },
+     { label: "Front End UI", status: "Stable", color: "muted" }
+  ];
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-700">
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -53,19 +72,21 @@ export function InsightsGrid() {
              <CardContent className="p-6">
                 <div className="flex items-end gap-3 mb-6">
                    <div className="text-6xl font-black tracking-tighter text-foreground italic flex items-start">
-                     92 <span className="text-xl mt-2 ml-2">%</span>
+                     {authority} <span className="text-xl mt-2 ml-2">%</span>
                    </div>
                    <div className="text-[9px] font-black text-green-500 uppercase tracking-widest mb-2 flex items-center gap-1">
-                      <TrendingUp size={10} /> +4% TACTICAL BOOST
+                      <TrendingUp size={10} /> {insights?.authority_boost || "+0% TACTICAL"}
                    </div>
                 </div>
                 <div className="space-y-4">
                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 w-[92%] shadow-[0_0_12px_rgba(34,197,94,0.5)] transition-all duration-1000" />
+                      <div 
+                        className="h-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)] transition-all duration-1000" 
+                        style={{ width: `${authority}%` }}
+                      />
                    </div>
                    <p className="text-[10px] font-medium text-muted-foreground uppercase leading-relaxed tracking-wider">
-                      Your profile authority is optimized for Senior Backend roles. 
-                      <span className="text-foreground font-black ml-1 border-b border-primary/40">Update 'Cloud Security' for +5% gain.</span>
+                      {insights?.authority_recommendation || "Optimization parameters syncing..."}
                    </p>
                 </div>
              </CardContent>
@@ -81,18 +102,21 @@ export function InsightsGrid() {
              </CardHeader>
              <CardContent className="p-6">
                 <div className="space-y-4">
-                   <div className="flex items-center justify-between group/item">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest group-hover/item:text-foreground transition-colors">Python / Backend</span>
-                      <span className="text-[9px] font-black text-blue-500 uppercase bg-blue-500/10 px-2 py-0.5 rounded-sm">Extreme</span>
-                   </div>
-                   <div className="flex items-center justify-between group/item">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest group-hover/item:text-foreground transition-colors">Cloud Systems</span>
-                      <span className="text-[9px] font-black text-primary uppercase bg-primary/10 px-2 py-0.5 rounded-sm">Surging</span>
-                   </div>
-                   <div className="flex items-center justify-between group/item opacity-60">
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest group-hover/item:text-foreground transition-colors">Front End UI</span>
-                      <span className="text-[9px] font-black text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded-sm">Stable</span>
-                   </div>
+                   {marketDemand.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between group/item">
+                         <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest group-hover/item:text-foreground transition-colors">
+                           {item.label}
+                         </span>
+                         <span className={cn(
+                            "text-[9px] font-black uppercase px-2 py-0.5 rounded-sm",
+                            item.color === 'blue' && "text-blue-500 bg-blue-500/10",
+                            item.color === 'primary' && "text-primary bg-primary/10",
+                            item.color === 'muted' && "text-muted-foreground bg-muted"
+                         )}>
+                           {item.status}
+                         </span>
+                      </div>
+                   ))}
                    <div className="pt-6 border-t border-border/40 mt-4">
                       <Button variant="ghost" size="sm" className="w-full text-[9px] font-black tracking-[0.2em] uppercase hover:bg-muted/60 border border-border/40">
                          ANALYZE NEW SECTORS
@@ -102,7 +126,6 @@ export function InsightsGrid() {
              </CardContent>
           </Card>
        </div>
-
     </div>
   );
 }

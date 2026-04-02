@@ -19,7 +19,7 @@ import { Job } from "@/lib/services/job-service";
 import DraftCLOverlay from "./DraftCLOverlay";
 import { toast } from "sonner";
 import { useAppDispatch } from "@/lib/redux/store";
-import { updateJobStatus, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
+import { updateJobStatus, fetchJobMetrics, deleteJob } from "@/lib/redux/slices/jobSlice";
 
 interface PositionSpecificationsProps {
    selectedJob: Job | null;
@@ -39,7 +39,7 @@ export default function PositionSpecifications({
    const dispatch = useAppDispatch();
    return (
       // 1. Set the root height to exactly 70vh
-      <div className="hidden lg:flex flex-1 flex-col relative h-[70vh] w-full">
+      <div className="hidden lg:flex flex-1 flex-col relative h-[50vh] w-full  mb-10">
          <AnimatePresence mode="wait">
             {selectedJob ? (
                <motion.div
@@ -140,13 +140,13 @@ export default function PositionSpecifications({
 
                         {/* Action Matrix - Tactical Buffer for taskbar/mobile UI security */}
                         <div className="pt-8 border-t border-border/20 grid grid-cols-2 gap-6 pb-32 mb-10">
-                           <Button 
+                           <Button
                               onClick={(e) => {
-                                 e.stopPropagation(); 
+                                 e.stopPropagation();
                                  const url = selectedJob.url;
                                  console.log("TACTICAL_LINK_DISPATCH:", url);
                                  console.log("ELECTRON_CONTEXT_DETECTED:", !!(window as any).electron);
-                                 
+
                                  if (!url) {
                                     toast.error("PROTOCOL BREACH", { description: "Mission URL is missing or corrupted." });
                                     return;
@@ -186,9 +186,22 @@ export default function PositionSpecifications({
                                  )}
                               </Button>
                               <Button
-                                 onClick={() => toast.error("ACCESS DENIED", {
-                                    description: "Position removal sequence failed. User permissions insufficient."
-                                 })}
+                                 onClick={() => {
+                                    if (!selectedJob?.id) return;
+                                    dispatch(deleteJob(selectedJob.id))
+                                       .unwrap()
+                                       .then(() => {
+                                          toast.success("MISSION PURGED", {
+                                             description: "Job record successfully removed from the private vault."
+                                          });
+                                          dispatch(fetchJobMetrics());
+                                       })
+                                       .catch(() => {
+                                          toast.error("PROTOCOL BREACH", {
+                                             description: "Failed to remove the position record from the binary stream."
+                                          });
+                                       });
+                                 }}
                                  variant="outline"
                                  className="h-14 border-2 border-border font-black uppercase tracking-widest text-[9px] rounded-2xl hover:border-red-500/40 hover:text-red-500 transition-all flex flex-col items-center justify-center gap-1"
                               >

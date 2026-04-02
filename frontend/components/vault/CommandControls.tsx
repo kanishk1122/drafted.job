@@ -4,11 +4,21 @@ import React from "react";
 import { Search, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+   Select,
+   SelectContent,
+   SelectItem,
+   SelectTrigger,
+   SelectValue,
+} from "@/components/ui/select";
 
 interface CommandControlsProps {
    platforms: string[];
    selectedPlatform: string;
    setSelectedPlatform: (platform: string) => void;
+   statuses: string[];
+   selectedStatus: string;
+   setSelectedStatus: (status: string) => void;
    showFilters: boolean;
    setShowFilters: (show: boolean) => void;
    searchQuery: string;
@@ -19,6 +29,9 @@ export default function CommandControls({
    platforms,
    selectedPlatform,
    setSelectedPlatform,
+   statuses,
+   selectedStatus,
+   setSelectedStatus,
    showFilters,
    setShowFilters,
    searchQuery,
@@ -36,30 +49,53 @@ export default function CommandControls({
                   className="pl-12 h-12 bg-card/40 border-border border-2 font-black text-[10px] tracking-widest uppercase rounded-xl focus-visible:ring-primary/40 focus-visible:border-primary/60 focus-visible:ring-4 transition-all"
                />
             </div>
-            <Button
-               variant="outline"
-               onClick={() => setShowFilters(!showFilters)}
-               className={`h-12 w-12 rounded-xl border-2 transition-all flex items-center justify-center p-0 ${showFilters ? 'bg-primary/20 border-primary/40 text-primary' : 'border-border/60 hover:border-primary/40'}`}
-            >
-               <Filter size={18} />
-            </Button>
+            <div className="flex items-center gap-2">
+               <Button
+                  variant="outline"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`h-12 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-2 ${showFilters ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]' : 'border-border/60 hover:border-primary/40 text-muted-foreground'}`}
+               >
+                  <Filter size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Tactical Filters</span>
+               </Button>
+            </div>
          </div>
 
          {showFilters && (
-            <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-2 duration-300 px-1">
-               {platforms.map(platform => (
-                  <Button
-                     key={platform}
-                     onClick={() => setSelectedPlatform(platform)}
-                     variant="ghost"
-                     className={`h-9 px-6 text-[9px] font-black tracking-widest uppercase rounded-full border-2 transition-all ${selectedPlatform === platform
-                        ? "bg-primary text-primary-foreground border-primary shadow-[0_5px_15px_rgba(var(--primary-rgb),0.3)]"
-                        : "bg-muted/40 text-muted-foreground border-transparent hover:border-border hover:bg-muted/60"
-                        }`}
-                  >
-                     {platform}
-                  </Button>
-               ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2 duration-300 px-1 pt-2">
+               {/* Platform Selector */}
+               <div className="space-y-2.5">
+                  <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 opacity-60">Platform Pipeline</p>
+                  <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                     <SelectTrigger className="w-full h-12 bg-card/20 border-2 border-border/40 rounded-2xl px-5 text-[10px] font-black uppercase tracking-widest hover:border-primary/40 transition-all focus:ring-primary/10">
+                        <SelectValue placeholder="Select Platform" />
+                     </SelectTrigger>
+                     <SelectContent className="bg-background/95 backdrop-blur-xl border-2 border-border/40 rounded-2xl shadow-2xl">
+                        {platforms.map(p => (
+                           <SelectItem key={p} value={p} className="text-[10px] font-black uppercase tracking-widest py-3 focus:bg-primary/10 focus:text-primary transition-colors cursor-pointer">
+                              {p}
+                           </SelectItem>
+                        ))}
+                     </SelectContent>
+                  </Select>
+               </div>
+
+               {/* Status Selector */}
+               <div className="space-y-2.5">
+                  <p className="text-[8px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 opacity-60">Mission Status</p>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                     <SelectTrigger className="w-full h-12 bg-card/20 border-2 border-border/40 rounded-2xl px-5 text-[10px] font-black uppercase tracking-widest hover:border-primary/40 transition-all focus:ring-primary/10">
+                        <SelectValue placeholder="Select Status" />
+                     </SelectTrigger>
+                     <SelectContent className="bg-background/95 backdrop-blur-xl border-2 border-border/40 rounded-2xl shadow-2xl">
+                        {statuses.map(s => (
+                           <SelectItem key={s} value={s} className="text-[10px] font-black uppercase tracking-widest py-3 focus:bg-primary/10 focus:text-primary transition-colors cursor-pointer">
+                              {s}
+                           </SelectItem>
+                        ))}
+                     </SelectContent>
+                  </Select>
+               </div>
             </div>
          )}
       </div>

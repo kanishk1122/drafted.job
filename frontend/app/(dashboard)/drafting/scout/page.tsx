@@ -91,7 +91,7 @@ function MissionPage() {
         }));
       } else if (event.type === "thinking") {
         const isMatch = event.message.startsWith("✅");
-        const isSkip  = event.message.startsWith("⏭️");
+        const isSkip  = event.message.startsWith("⏭️") || event.message.startsWith("📉");
         const isError = event.message.startsWith("❌") || event.message.startsWith("⛔") || event.message.startsWith("⚠️");
         setThoughts(prev => [...prev, {
           text: event.message,

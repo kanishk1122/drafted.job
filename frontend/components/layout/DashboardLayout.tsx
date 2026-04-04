@@ -32,7 +32,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="flex h-screen bg-background text-foreground font-sans selection:bg-primary/30 transition-colors duration-500">
+    <div className="flex h-[99.6vh] bg-background text-foreground font-sans selection:bg-primary/30 transition-colors duration-500">
       {/* Sidebar Container with Hover-Reveal logic */}
       <div 
         onMouseEnter={() => sidebarMode === 'hover' && setIsHovered(true)}

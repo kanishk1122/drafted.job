@@ -10,11 +10,12 @@ import re
 
 PLATFORM_SEARCH_CONFIG = {
     "linkedin": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, page=1: (
             f"https://www.linkedin.com/jobs/search/"
             f"?keywords={urllib.parse.quote_plus(q)}"
             f"&location={urllib.parse.quote_plus(loc)}"
             f"&f_TPR=r86400"
+            f"&start={25 * (page - 1)}"
         ),
         "job_card_selectors": [
             "li[data-occludable-job-id]",
@@ -29,11 +30,12 @@ PLATFORM_SEARCH_CONFIG = {
         "location_selector": ".job-card-container__metadata-item, .job-search-card__location, .base-search-card__metadata",
     },
     "indeed": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, page=1: (
             f"https://in.indeed.com/jobs"
             f"?q={urllib.parse.quote_plus(q)}"
             f"&l={urllib.parse.quote_plus(loc)}"
             f"&fromage=1"
+            f"&start={10 * (page - 1)}"
         ),
         "job_card_selectors": ["div.cardOutline", "div.job_seen_beacon", "td.resultContent"],
         "wait_selector": "div.cardOutline, div.job_seen_beacon, td.resultContent",
@@ -42,7 +44,7 @@ PLATFORM_SEARCH_CONFIG = {
         "location_selector": "[data-testid='text-location'], .companyLocation, .css-1p99vba",
     },
     "foundit": {
-        "search_url": lambda q, loc, yox=1: (
+        "search_url": lambda q, loc, yox=1, page=1: (
             f"https://www.foundit.in/srp/results"
             f"?query={urllib.parse.quote_plus(q)}"
             f"&locations={urllib.parse.quote_plus(loc)}"
@@ -50,6 +52,7 @@ PLATFORM_SEARCH_CONFIG = {
             f"&experience={yox}"
             f"&jobFreshness=3"
             f"&sort=1"
+            f"&start={15 * (page - 1)}"
         ),
         "job_card_selectors": ["div.cardContainer", "div.srpCard", "div.job-apply-card"],
         "wait_selector": "div.cardContainer, div.srpCard",
@@ -59,10 +62,10 @@ PLATFORM_SEARCH_CONFIG = {
         "posted_selector": ".timeText"
     },
     "naukri": {
-        "search_url": lambda q, loc, yox=0: (
+        "search_url": lambda q, loc, yox=0, page=1: (
             f"https://www.naukri.com/"
             f"{q.lower().replace(' ', '-').replace('.', '-dot-')}"
-            f"-jobs-in-{loc.lower().replace(' ', '-')}"
+            f"-jobs-in-{loc.lower().replace(' ', '-')}-{page}"
             f"?k={urllib.parse.quote(q)}"
             f"&l={urllib.parse.quote(loc)}"
             f"&experience={yox}"
@@ -79,7 +82,7 @@ PLATFORM_SEARCH_CONFIG = {
         "posted_selector": "[class*='job-post-day']"
     },
     "glassdoor": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, page=1: (
             f"https://www.glassdoor.co.in/Job/jobs.htm"
             f"?sc.keyword={urllib.parse.quote_plus(q)}"
             f"&locT=C&locId={urllib.parse.quote_plus(loc)}"
@@ -91,7 +94,7 @@ PLATFORM_SEARCH_CONFIG = {
         "location_selector": "[data-test='location'], .location",
     },
     "ambitionbox": {
-        "search_url": lambda q, loc: (
+        "search_url": lambda q, loc, page=1: (
             f"https://www.ambitionbox.com/jobs/search"
             f"?tag={urllib.parse.quote_plus(q)}"
             f"&location={urllib.parse.quote_plus(loc)}"
@@ -219,7 +222,7 @@ async def _extract_card_data_generic(card, config, location_default: str) -> dic
 
 async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000) -> dict:
     try:
-        await card.click()
+        await card.click(force=True)
         # LinkedIn and Foundit JD side-panels
         await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container", timeout=timeout)
         await asyncio.sleep(1.2)
@@ -263,6 +266,8 @@ async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000
     except Exception as e:
         print(f"⚠️ Detail panel ingest failed: {e}")
         return {"description": "", "location": "", "workType": ""}
+        
+        return {"description": "", "location": "", "workType": ""}
 
 
 class JobScoutService:
@@ -271,6 +276,59 @@ class JobScoutService:
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=settings.NVIDIA_API_KEY
         ) if settings.NVIDIA_API_KEY else None
+
+    async def _close_common_popups(self, page):
+        """Tactical suppression of overlays that block mission-critical clicks."""
+        try:
+            await page.evaluate("""() => {
+                const selectors = [
+                    'button[aria-label="close"]',
+                    'button.icl-CloseButton',
+                    '.icl-Modal-close',
+                    '#mosaic-provider-jobcards-pwa-close',
+                    '.jobsearch-HiringInsights-close',
+                    '#popover-close-trigger'
+                ];
+                selectors.forEach(s => {
+                    const el = document.querySelector(s);
+                    if (el && typeof el.click === 'function') el.click();
+                });
+            }""")
+        except: pass
+
+    async def _inject_control_overlay(self, page):
+        """Injected neural lockout layer: prevents user interference during mission."""
+        try:
+            await page.evaluate("""() => {
+                if (document.getElementById('drafted-lockout')) return;
+                
+                const lockout = document.createElement('div');
+                lockout.id = 'drafted-lockout';
+                Object.assign(lockout.style, {
+                    position: 'fixed', inset: '0', zIndex: '2147483640',
+                    cursor: 'wait', background: 'rgba(0,0,0,0.01)', pointerEvents: 'auto'
+                });
+                
+                const banner = document.createElement('div');
+                banner.id = 'drafted-control-banner';
+                banner.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:15px;padding:0 25px;">
+                        <div style="width:10px;height:10px;background:#10b981;border-radius:50%;box-shadow:0 0 15px #10b981;animation:d-pulse 2s infinite;"></div>
+                        <span style="font-weight:900;letter-spacing:3px;font-size:10px;text-transform:uppercase;color:#10b981;font-family:monospace;">Neural Mission Active : Interaction Locked</span>
+                    </div>
+                    <style>@keyframes d-pulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }</style>
+                `;
+                Object.assign(banner.style, {
+                    position: 'fixed', top: '0', left: '0', right: '0', height: '32px',
+                    background: 'rgba(0,0,0,0.95)', zIndex: '2147483647', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(15px)',
+                    borderBottom: '2px solid #10b981', userSelect: 'none'
+                });
+                
+                document.documentElement.appendChild(lockout);
+                document.documentElement.appendChild(banner);
+            }""")
+        except: pass
 
     async def _get_job_detail_via_popup(self, context, page, card, platform: str) -> str:
         # TACTICAL: Finalize any ghost tabs before mission start
@@ -297,6 +355,7 @@ class JobScoutService:
             try:
                 # SATURATION: Wait for full window load and technical hydration
                 await new_page.wait_for_load_state("load", timeout=15000)
+                await self._inject_control_overlay(new_page)
                 await asyncio.sleep(2.0) # Industrial saturation grace period
 
                 # TACTICAL DRILL: Handle Naukri's "Something went wrong" hydration failure
@@ -489,6 +548,10 @@ class JobScoutService:
             scout_session.location = location
             scout_session.platform = platform
             scout_session.current_task_id = task_nonce
+            
+            # Mission Continuity Protocol: Identify starting point
+            resumed_platform = scout_session.current_platform
+            resumed_page = scout_session.current_page or 1
             db.commit()
         else:
             # ... (creating new session as before)
@@ -505,6 +568,8 @@ class JobScoutService:
             )
             db.add(scout_session); db.commit(); db.refresh(scout_session)
             yield json.dumps({"type": "thinking", "message": f"🚀 Tactical Mission #{scout_session.id} initiated."})
+            resumed_platform = None
+            resumed_page = 1
 
         # PLATFORM AGGREGATION: Split multiple mission objectives
         platforms = [p.strip().lower() for p in platform.split(",")]
@@ -542,6 +607,13 @@ class JobScoutService:
             platform_map = { b["platform"].lower(): i for i, b in enumerate(mission_breakdown) }
 
             for target_platform in platforms:
+                # Mission Continuity: Skip platforms already conquered in this session context
+                if resumed_platform and target_platform != resumed_platform:
+                    # Check if the resumed platform appears later in the list (so we skip early ones)
+                    if resumed_platform in platforms[platforms.index(target_platform)+1:]:
+                        yield json.dumps({"type": "thinking", "message": f"⏩ Skipping {target_platform.upper()} (Already processed in original run)"})
+                        continue
+
                 stop_platform = False
                 yield json.dumps({"type": "thinking", "message": f"🚀 TARGET ACQUIRED: Initiating mission on {target_platform.upper()}..."})
                 
@@ -558,15 +630,22 @@ class JobScoutService:
                 p_idx = platform_map[p_key]
                 platform_saved = 0 # Local count for this turn
                 
+                # Persistence Checkpoint: Sync platform to vault
+                scout_session.current_platform = target_platform
+                db.commit()
+                
                 config = PLATFORM_SEARCH_CONFIG.get(target_platform)
                 if not config:
                     yield json.dumps({"type": "thinking", "message": f"⚠️ Unsupported platform: {target_platform}. Skipping node."})
                     continue
 
+                # 1. Determine starting page for this platform in this mission turn
+                start_page = resumed_page if target_platform == resumed_platform else 1
+                
                 if target_platform in ["naukri", "foundit"]:
-                    search_url = config["search_url"](target_role, location, years_of_exp)
+                    search_url = config["search_url"](target_role, location, years_of_exp, page=start_page)
                 else:
-                    search_url = config["search_url"](target_role, location)
+                    search_url = config["search_url"](target_role, location, page=start_page)
 
                 yield json.dumps({"type": "thinking", "message": f"🌐 Navigating to {target_platform.upper()}..."})
                 try:
@@ -590,6 +669,9 @@ class JobScoutService:
                             }''')
                             await asyncio.sleep(4.0) # Grace period for sort re-hydration
                         except: pass
+                    
+                    # SYSTEM OVERLAY: Stabilize Neural Link
+                    await self._inject_control_overlay(page)
                 except Exception as e:
                     print(f"⚠️ Navigation warning (proceeding anyway): {e}")
 
@@ -654,8 +736,11 @@ class JobScoutService:
                 yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} jobs. Analyzing top matches..."})
                 platform_saved = 0
                 is_linkedin = (target_platform == "linkedin")
-                current_page = 1
-                MAX_PAGES = 5 # Default fallback
+                
+                # Mission Continuity: Align starting page from hibernation data
+                current_page = start_page
+                MAX_PAGES = min(15, current_page + 4) # Maintain a sliding window of 5 pages from start_page
+                consecutive_skips = 0
 
                 # 1. Dynamically extract total pages from LinkedIn UI if available
                 if is_linkedin:
@@ -698,14 +783,23 @@ class JobScoutService:
                                 next_btn = await page.query_selector("a:has(span:text('Next'))")
                         elif target_platform == "foundit":
                             next_btn = await page.query_selector(".pagination .arrow-right") or await page.query_selector(".mqfisrp-right-arrow")
-                        elif target_platform == "indeed":
-                            next_btn = await page.query_selector("a[data-testid='pagination-page-next'], a[aria-label='Next Page'], .pagination-next, [aria-label='Next']")
+                        if target_platform == "indeed":
+                            await self._close_common_popups(page)
+                            next_btn = await page.query_selector("a[data-testid='pagination-page-next'], a[aria-label='Next Page'], .pagination-next, [aria-label='Next'], nav a:has-text('Next')")
                         
+                        if not next_btn: 
+                            # INDUSTRIAL FALLBACK: Try scrolling to bottom to trigger lazy-pagination or reveals
+                            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            await asyncio.sleep(2.0)
+                            if target_platform == "indeed":
+                                next_btn = await page.query_selector("a[aria-label='Next Page'], [data-testid='pagination-page-next']")
+
                         if not next_btn: 
                             yield json.dumps({"type": "thinking", "message": f"📍 {target_platform.upper()}: No more pages found."})
                             break
                         
-                        await next_btn.click()
+                        await next_btn.scroll_into_view_if_needed()
+                        await next_btn.click(force=True)
                         # EXTENDED HYDRATION: Allow full page transition and data-saturation
                         await asyncio.sleep(8.0) 
                         
@@ -742,6 +836,10 @@ class JobScoutService:
                         
                         if not job_ids: break
                         yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} new jobs on Page {current_page}."})
+
+                    # Persistence Checkpoint: Register current navigation state
+                    scout_session.current_page = current_page
+                    db.commit()
 
                     # TACTICAL: Process more jobs per page for Indeed as requested
                     job_limit = 25 if target_platform == "indeed" else 15
@@ -808,6 +906,10 @@ class JobScoutService:
                             
                             raw_job_desc = ""
                             enriched_meta = {}
+                            
+                            # Defend against blocking overlays
+                            await self._close_common_popups(page)
+
                             if is_linkedin or target_platform == "foundit":
                                 intel = await _get_job_detail_via_panel(page, card, job_id)
                                 raw_job_desc = intel.get("description", "")
@@ -849,9 +951,18 @@ class JobScoutService:
 
                             
                             if score <= 70:
+                                consecutive_skips += 1
                                 yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
                                 yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
+                                
+                                if consecutive_skips >= 20:
+                                    yield json.dumps({"type": "thinking", "message": f"📉 Quality Breach: 20 consecutive low-match leads detected (Threshold: 20). Switching platform vector..."})
+                                    stop_platform = True
+                                    break
                                 continue
+
+                            # Reset quality streak on clinical match
+                            consecutive_skips = 0
 
                             if db.query(JobRepository).filter(JobRepository.url == link).first():
                                 yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue

@@ -698,6 +698,8 @@ class JobScoutService:
                                 next_btn = await page.query_selector("a:has(span:text('Next'))")
                         elif target_platform == "foundit":
                             next_btn = await page.query_selector(".pagination .arrow-right") or await page.query_selector(".mqfisrp-right-arrow")
+                        elif target_platform == "indeed":
+                            next_btn = await page.query_selector("a[data-testid='pagination-page-next'], a[aria-label='Next Page'], .pagination-next, [aria-label='Next']")
                         
                         if not next_btn: 
                             yield json.dumps({"type": "thinking", "message": f"📍 {target_platform.upper()}: No more pages found."})
@@ -741,13 +743,20 @@ class JobScoutService:
                         if not job_ids: break
                         yield json.dumps({"type": "thinking", "message": f"✅ {target_platform.upper()}: Found {len(job_ids)} new jobs on Page {current_page}."})
 
-                    for i, job_id in enumerate(job_ids[:15]): # Cap at 15 per page for faster mission turns
+                    # TACTICAL: Process more jobs per page for Indeed as requested
+                    job_limit = 25 if target_platform == "indeed" else 15
+                    for i, job_id in enumerate(job_ids[:job_limit]):
                         if not await _check_mission_integrity() or stop_platform: break
                         
                         try:
                             # 2. Re-find card by ID inside the loop (Resilience)
-                            id_selector = f"[data-occludable-job-id*='{job_id}'], [data-job-id*='{job_id}'], [data-jk*='{job_id}'], [id*='{job_id}'], [href*='{job_id}']"
+                            id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], .job_{job_id}"
                             card = await page.query_selector(id_selector)
+                            
+                            if not card:
+                                # INDUSTRIAL FALLBACK: If exact ID selector fails, try partial match
+                                partial_selector = f"[data-occludable-job-id*='{job_id}'], [data-job-id*='{job_id}'], [data-jk*='{job_id}'], [id*='{job_id}'], [href*='{job_id}']"
+                                card = await page.query_selector(partial_selector)
                             
                             if not card:
                                 # INDUSTRIAL FALLBACK: If ID selector fails, try finding by text or index

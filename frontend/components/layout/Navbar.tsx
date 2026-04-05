@@ -16,28 +16,44 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 import { useTheme } from "next-themes";
 import { createAvatar } from '@dicebear/core';
 import { notionists } from '@dicebear/collection';
 
 import { useSelector, useDispatch } from "react-redux";
-import { RootState } from "@/lib/redux/store";
+import { RootState, useAppDispatch, useAppSelector } from "@/lib/redux/store";
 import { authService } from "@/lib/services/auth-service";
 import { logout } from "@/lib/redux/slices/authSlice";
+import { fetchNotifications, markAsRead, markAllAsRead } from "@/lib/redux/slices/notificationSlice";
+import { formatDistanceToNow } from 'date-fns';
 
 export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { theme, setTheme } = useTheme();
   const dispatch = useDispatch();
-  const { fullName, userEmail } = useSelector((state: RootState) => state.auth);
+  const { fullName, userEmail } = useAppSelector((state: RootState) => state.auth);
+  const { items: notifications, unreadCount, loading: notificationsLoading } = useAppSelector((state: RootState) => state.notification);
   
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
   const [avatarSvg, setAvatarSvg] = React.useState("");
   const profileRef = React.useRef<HTMLDivElement>(null);
   const notificationsRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (userEmail) {
+      dispatch(fetchNotifications() as any);
+      
+      // Optional: Poll for new notifications every minute
+      const interval = setInterval(() => {
+        dispatch(fetchNotifications() as any);
+      }, 60000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [userEmail, dispatch]);
 
   React.useEffect(() => {
     const avatar = createAvatar(notionists, {
@@ -113,14 +129,15 @@ export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
             <span className="sr-only">Toggle theme</span>
           </Button>
           
-          <Button 
-            onClick={() => window.location.href = '/drafting'}
-            variant="outline" 
-            size="sm" 
-            className="hidden lg:flex border-border bg-muted/40 hover:bg-muted text-xs font-bold gap-2 tracking-tight"
-          >
-            <Plus size={14} /> NEW SEARCH
-          </Button>
+          <Link href="/drafting?initiate=true" passHref>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="hidden lg:flex border-border bg-muted/40 hover:bg-muted text-xs font-bold gap-2 tracking-tight"
+            >
+              <Plus size={14} /> NEW SEARCH
+            </Button>
+          </Link>
 
           {/* Notifications Panel */}
           <div className="relative" ref={notificationsRef}>
@@ -134,56 +151,78 @@ export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
               )}
             >
               <Bell size={20} />
-              <span className="absolute top-2 right-2.5 w-1.5 h-1.5 bg-primary rounded-full outline outline-2 outline-background animate-pulse"></span>
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2.5 w-1.5 h-1.5 bg-primary rounded-full outline outline-2 outline-background animate-pulse"></span>
+              )}
             </Button>
 
             {notificationsOpen && (
               <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-card shadow-2xl z-40 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/60 bg-muted/40 flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Notifications</span>
-                  <span className="text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">3 NEW</span>
+                  {unreadCount > 0 && (
+                     <span 
+                       onClick={() => dispatch(markAllAsRead() as any)}
+                       className="text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-primary/20 transition-colors"
+                     >
+                        {unreadCount} NEW - MARK ALL READ
+                     </span>
+                  )}
                 </div>
-                <div className="max-h-[300px] overflow-y-auto divide-y divide-border/40">
-                  <div className="p-4 hover:bg-muted/30 transition-colors cursor-pointer group">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                        <Zap size={14} className="text-primary" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold leading-tight uppercase">98% Match Found</p>
-                        <p className="text-[10px] text-muted-foreground leading-normal">System found 'Lead Architect' at Tech Unicorn. High relevance detected.</p>
-                        <p className="text-[9px] text-muted-foreground/50 font-mono">2 mins ago</p>
-                      </div>
+                <div className="max-h-[350px] overflow-y-auto divide-y divide-border/40 thin-scrollbar">
+                  {notifications.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">No new alerts</p>
                     </div>
-                  </div>
-                  <div className="p-4 hover:bg-muted/30 transition-colors cursor-pointer group">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded bg-blue-500/10 flex items-center justify-center shrink-0">
-                        <User size={14} className="text-blue-500" />
+                  ) : (
+                    notifications.map((notif) => (
+                      <div 
+                        key={notif.id}
+                        onClick={() => {
+                          if (!notif.is_read) dispatch(markAsRead(notif.id) as any);
+                        }}
+                        className={cn(
+                          "p-4 hover:bg-muted/30 transition-colors cursor-pointer group",
+                          !notif.is_read && "bg-primary/[0.02]"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={cn(
+                            "w-8 h-8 rounded flex items-center justify-center shrink-0",
+                            notif.type === 'discovery' ? "bg-primary/10 text-primary" : 
+                            notif.type === 'error' ? "bg-red-500/10 text-red-500" :
+                            notif.type === 'success' ? "bg-emerald-500/10 text-emerald-500" :
+                            "bg-blue-500/10 text-blue-500"
+                          )}>
+                            {notif.type === 'discovery' ? <Zap size={14} /> : 
+                             notif.type === 'error' ? <Bell size={14} /> :
+                             <Activity size={14} />}
+                          </div>
+                          <div className="space-y-1">
+                            <p className={cn("text-xs font-bold leading-tight uppercase", !notif.is_read ? "text-foreground" : "text-muted-foreground")}>
+                              {notif.title}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground leading-normal line-clamp-2">
+                              {notif.message}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground/50 font-mono">
+                              {formatDistanceToNow(new Uint8Array(new TextEncoder().encode(notif.created_at))).replace('about ', '')} ago
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold leading-tight uppercase">Profile Viewed</p>
-                        <p className="text-[10px] text-muted-foreground leading-normal">A recruiter from Fintech Global viewed your full profile stats.</p>
-                        <p className="text-[9px] text-muted-foreground/50 font-mono">1 hour ago</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4 hover:bg-muted/30 opacity-60">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
-                        <Bell size={14} className="text-muted-foreground" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold leading-tight uppercase">Search Completed</p>
-                        <p className="text-[10px] text-muted-foreground leading-normal">The 'Senior Backend' search has finished scanning 4 platforms.</p>
-                        <p className="text-[9px] text-muted-foreground/50 font-mono">3 hours ago</p>
-                      </div>
-                    </div>
-                  </div>
+                    ))
+                  )}
                 </div>
-                <button className="w-full py-2.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted border-t border-border/60 transition-all">
+                {/* <button 
+                  onClick={() => {
+                    window.location.href = '/logs';
+                    setNotificationsOpen(false);
+                  }}
+                  className="w-full py-2.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted border-t border-border/60 transition-all text-center"
+                >
                   VIEW ALL ACTIVITY
-                </button>
+                </button> */}
               </div>
             )}
           </div>

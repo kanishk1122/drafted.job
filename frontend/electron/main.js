@@ -43,10 +43,29 @@ async function createWindow() {
 ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
-  const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-  const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-  const chromeExe = fs.existsSync(chromePath) ? chromePath : (fs.existsSync(chromePathX86) ? chromePathX86 : 'chrome.exe');
-  const flags = [`--user-data-dir=${profileDir}`, '--remote-debugging-port=9223', '--remote-debugging-address=0.0.0.0', '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check', '--new-window', url];
+  
+  let chromeExe = 'chrome';
+  if (process.platform === 'win32') {
+    const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+    chromeExe = fs.existsSync(chromePath) ? chromePath : (fs.existsSync(chromePathX86) ? chromePathX86 : 'chrome.exe');
+  } else if (process.platform === 'linux') {
+    chromeExe = 'google-chrome'; // Standard on Ubuntu/Debian
+  } else if (process.platform === 'darwin') {
+    chromeExe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  }
+
+  const flags = [
+    `--user-data-dir=${profileDir}`, 
+    '--remote-debugging-port=9223', 
+    '--remote-debugging-address=0.0.0.0', 
+    '--remote-allow-origins=*', 
+    '--no-first-run', 
+    '--no-default-browser-check', 
+    '--new-window', 
+    url
+  ];
+  
   const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
   child.unref();
   return { success: true, profile: profileDir };
@@ -55,7 +74,16 @@ ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
 ipcMain.handle('launch-chrome-debug', async (event, { userId }) => {
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
-  const chromeExe = 'chrome.exe';
+  
+  let chromeExe = 'chrome';
+  if (process.platform === 'win32') {
+    chromeExe = 'chrome.exe';
+  } else if (process.platform === 'linux') {
+    chromeExe = 'google-chrome';
+  } else if (process.platform === 'darwin') {
+    chromeExe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  }
+
   const flags = [`--user-data-dir=${profileDir}`, '--remote-debugging-port=9223', '--remote-debugging-address=0.0.0.0', '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check', 'about:blank'];
   const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
   child.unref();
@@ -115,6 +143,22 @@ ipcMain.handle('get-auth-cookie', async (event, name) => {
   }
 });
 
+ipcMain.handle('show-notification', (event, { title, body }) => {
+  const { Notification } = require('electron');
+  
+  if (Notification.isSupported()) {
+    const notif = new Notification({
+      title,
+      body,
+      silent: false,
+      timeoutType: 'default',
+    });
+    notif.show();
+    return { success: true };
+  }
+  return { success: false, error: 'Notifications not supported' };
+});
+
 app.whenReady().then(() => {
   // Protocol Handler
   protocol.handle('app', async (req) => {
@@ -144,8 +188,16 @@ app.whenReady().then(() => {
     }
 
     // 6. Final safety check: if still not found, return index.html (SPA Fallback)
+    // But ONLY if it's not a Next.js internal file like .txt or .json
     if (!fs.existsSync(targetPath)) {
-      console.warn(`⚠️ Not found, falling back to index: ${targetPath}`);
+      const isInternal = pathname.endsWith('.txt') || pathname.endsWith('.json') || pathname.includes('/_next/');
+      
+      if (isInternal) {
+         console.warn(`⚡ Skipping prefetch: ${pathname}`);
+         return new Response(null, { status: 404 });
+      }
+
+      console.warn(`⚠️ Route not found, falling back to index: ${targetPath}`);
       targetPath = path.join(__dirname, '../out/index.html');
     }
 

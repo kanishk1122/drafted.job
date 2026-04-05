@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('electron', {
       'launch-chrome-debug', 
       'open-external-browser',
       'set-auth-cookie',
-      'get-auth-cookie'
+      'get-auth-cookie',
+      'show-notification'
     ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, data);

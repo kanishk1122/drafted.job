@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback, useState } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import { Play, Layers, RefreshCcw, ArrowRight, Zap } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,17 @@ export default function DraftingPage() {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state: RootState) => state.auth);
   const context = useAppSelector((state: RootState) => state.profile.context);
-
+  
+  // URL Param logic for initiating from Navbar
   const [view, setView] = useState<"operational" | "initiate">("operational");
+
+  useEffect(() => {
+    // Check if we should start in initiate mode
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('initiate') === 'true') {
+      setView("initiate");
+    }
+  }, []);
   const [targetRole, setTargetRole] = useState("");
   const [location, setLocation] = useState("India");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["linkedin"]);

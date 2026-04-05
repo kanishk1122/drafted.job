@@ -30,3 +30,4 @@ class UserContext(Base):
     ambitionbox_active = Column(Boolean, default=False)
 
     resumes = relationship("Resume", back_populates="user")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")

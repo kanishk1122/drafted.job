@@ -1,9 +1,21 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.modules.ai.service import ai_service
 from app.modules.ai.schema import UserBioRequest, ExtractedInfo
 from app.modules.ai.service_recommendation import recommendation_service
+from app.core.database import get_db
+from sqlalchemy.orm import Session
+from app.core.dependencies import get_current_user
+from app.modules.user.model import UserContext
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
 
 router = APIRouter()
+
+class EnhanceResumeRequest(BaseModel):
+    user_id: Optional[int] = None
+    section: str
+    instructions: str
+    current_data: Dict[str, Any]
 
 @router.post("/extract-intent", response_model=ExtractedInfo)
 async def extract_intent(user_bio: UserBioRequest):
@@ -19,41 +31,18 @@ async def extract_intent(user_bio: UserBioRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Intelligence failure: {str(e)}")
 
-from app.core.database import get_db
-from sqlalchemy.orm import Session
-from fastapi import Depends, Cookie
-from jose import jwt
-from app.core.config import settings
-
 @router.get("/recommendations")
-async def get_recommendations(db: Session = Depends(get_db), access_token: str = Cookie(None)):
+async def get_recommendations(
+    db: Session = Depends(get_db), 
+    current_user: UserContext = Depends(get_current_user)
+):
     """
-    Get customized tactical career suggestions.
+    Get customized tactical career suggestions using unified auth.
     """
     try:
-        # Extract user_id from token
-        if not access_token:
-            # Fallback to first user for dev
-            user_id = 1
-        else:
-            payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            email = payload.get("sub")
-            from app.modules.user.model import UserContext
-            user = db.query(UserContext).filter(UserContext.email == email).first()
-            user_id = user.id if user else 1
-            
-        return await recommendation_service.get_recommendations(db, user_id)
+        return await recommendation_service.get_recommendations(db, current_user.id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
-
-class EnhanceResumeRequest(BaseModel):
-    user_id: Optional[int] = None
-    section: str
-    instructions: str
-    current_data: Dict[str, Any]
 
 @router.post("/enhance-resume")
 async def enhance_resume(request: EnhanceResumeRequest):
@@ -71,21 +60,15 @@ async def enhance_resume(request: EnhanceResumeRequest):
         raise HTTPException(status_code=500, detail=f"AI Enhancement failure: {str(e)}")
 
 @router.post("/recommendations/refresh")
-async def refresh_recommendations(db: Session = Depends(get_db), access_token: str = Cookie(None)):
+async def refresh_recommendations(
+    db: Session = Depends(get_db), 
+    current_user: UserContext = Depends(get_current_user)
+):
     """
-    Trigger AI to regenerate 3 unique career suggestions (24h cooldown).
+    Trigger AI to regenerate suggestions using unified auth.
     """
     try:
-        if not access_token:
-            user_id = 1
-        else:
-            payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            email = payload.get("sub")
-            from app.modules.user.model import UserContext
-            user = db.query(UserContext).filter(UserContext.email == email).first()
-            user_id = user.id if user else 1
-            
-        return await recommendation_service.refresh_recommendations(db, user_id)
+        return await recommendation_service.refresh_recommendations(db, current_user.id)
     except HTTPException as he:
         raise he
     except Exception as e:

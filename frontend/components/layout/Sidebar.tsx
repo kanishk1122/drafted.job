@@ -23,6 +23,13 @@ import { Badge } from "@/components/ui/badge";
 
 export function Sidebar({ collapsed }: { collapsed?: boolean }) {
   const pathname = usePathname();
+  
+  const isPageActive = (path: string) => {
+    if (!pathname) return false;
+    if (path === "/") return pathname === "/";
+    // Checks if pathname matches path with or without trailing slash
+    return pathname === path || pathname === `${path}/`;
+  };
 
   return (
     <aside
@@ -48,12 +55,12 @@ export function Sidebar({ collapsed }: { collapsed?: boolean }) {
       <nav className="flex-1 space-y-1 p-4 overflow-y-auto no-scrollbar">
         <div className="flex-1 space-y-4 py-6 px-0">
           <div className="space-y-1">
-            <NavItem label="Overview" icon={<LayoutDashboard size={18} />} active={pathname === "/"} href="/" collapsed={collapsed} />
-            <NavItem label="Career Search" icon={<Search size={18} />} active={pathname === "/drafting"} href="/drafting" collapsed={collapsed} />
-            <NavItem label="Job Vault" icon={<Bookmark size={18} />} active={pathname === "/vault"} href="/vault" collapsed={collapsed} />
-            <NavItem label="Pipeline" icon={<Kanban size={18} />} active={pathname === "/board"} href="/board" collapsed={collapsed} />
-            <NavItem label="Resume Forge" icon={<PenTool size={18} />} active={pathname === "/resume-forge"} href="/resume-forge" collapsed={collapsed} />
-            <NavItem label="My Profile" icon={<Brain size={18} />} active={pathname === "/profile"} href="/profile" collapsed={collapsed} />
+            <NavItem label="Overview" icon={<LayoutDashboard size={18} />} active={isPageActive("/")} href="/" collapsed={collapsed} />
+            <NavItem label="Career Search" icon={<Search size={18} />} active={isPageActive("/drafting")} href="/drafting" collapsed={collapsed} />
+            <NavItem label="Job Vault" icon={<Bookmark size={18} />} active={isPageActive("/vault")} href="/vault" collapsed={collapsed} />
+            <NavItem label="Pipeline" icon={<Kanban size={18} />} active={isPageActive("/board")} href="/board" collapsed={collapsed} />
+            <NavItem label="Resume Forge" icon={<PenTool size={18} />} active={isPageActive("/resume-forge")} href="/resume-forge" collapsed={collapsed} />
+            <NavItem label="My Profile" icon={<Brain size={18} />} active={isPageActive("/profile")} href="/profile" collapsed={collapsed} />
           </div>
 
           <div className="pt-4">
@@ -64,8 +71,8 @@ export function Sidebar({ collapsed }: { collapsed?: boolean }) {
               Activity
             </h3>
             <div className="space-y-1">
-              <NavItem label="Updates" icon={<LineChart size={18} />} active={pathname === "/logs"} href="/logs" collapsed={collapsed} />
-              <NavItem label="Preferences" icon={<Settings2 size={18} />} active={pathname === "/settings"} href="/settings" collapsed={collapsed} />
+              <NavItem label="Updates" icon={<LineChart size={18} />} active={isPageActive("/logs")} href="/logs" collapsed={collapsed} />
+              <NavItem label="Preferences" icon={<Settings2 size={18} />} active={isPageActive("/settings")} href="/settings" collapsed={collapsed} />
             </div>
           </div>
         </div>

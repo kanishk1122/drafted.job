@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { Navbar } from "./Navbar";
 import { useAppSelector, useAppDispatch } from "@/lib/redux/store";
 import { setSidebarMode } from "@/lib/redux/slices/uiSlice";
+import { useNotificationSocket } from "@/lib/hooks/useNotificationSocket";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const { sidebarMode } = useAppSelector((state) => state.ui);
   const [isHovered, setIsHovered] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Initialize real-time notification socket
+  useNotificationSocket();
 
   useEffect(() => {
     setMounted(true);
@@ -32,7 +36,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="flex h-[99.6vh] bg-background text-foreground font-sans selection:bg-primary/30 transition-colors duration-500">
+    <div className="flex h-screen bg-background text-foreground font-sans selection:bg-primary/30 transition-colors duration-500 overflow-hidden">
       {/* Sidebar Container with Hover-Reveal logic */}
       <div 
         onMouseEnter={() => sidebarMode === 'hover' && setIsHovered(true)}
@@ -47,9 +51,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
         {/* Navbar with reactive toggler */}
         <Navbar onToggleSidebar={handleToggle} />
         
-        <main className="flex-1 relative overflow-y-scroll flex flex-col">
-          <div className="flex-1 w-full relative p-4 h-[calc(100vh-10rem)]">
-             {children}
+        <main className="flex-1 relative overflow-y-auto overflow-x-hidden flex flex-col">
+          <div className="flex-1 w-full relative p-4 lg:p-6">
+            {children}
           </div>
         </main>
       </div>

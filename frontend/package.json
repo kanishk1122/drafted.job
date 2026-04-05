@@ -2,7 +2,8 @@
   "name": "frontend",
   "version": "0.0.1",
   "description": "Professional AI-driven job scouting and recruitment platform.",
-  "author": "Drafted Jobs Team",
+  "author": "Drafted Jobs Team <team@drafted.jobs>",
+  "homepage": "https://drafted.jobs",
   "main": "electron/main.js",
   "scripts": {
     "dev": "next dev --turbopack",
@@ -12,14 +13,19 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --win --linux",
     "package": "electron-builder",
+    "package:win": "electron-builder --win",
+    "package:linux": "electron-builder --linux",
+    "package:all": "electron-builder --win --linux --mac",
     "prod-test": "npm run build && npx cross-env NODE_ENV=production electron ."
   },
   "build": {
     "appId": "com.drafted.jobs",
     "productName": "DraftedJobs",
+    "executableName": "draftedjobs",
     "copyright": "Copyright © 2024 Drafted Jobs",
+    "icon": "public/icon.png",
     "directories": {
       "output": "dist"
     },
@@ -36,8 +42,21 @@
             "x64"
           ]
         }
+      ]
+    },
+    "linux": {
+      "target": [
+        "tar.gz",
+        "deb"
       ],
-      "icon": "public/icon.png"
+      "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
     },
     "nsis": {
       "oneClick": false,
@@ -56,10 +75,11 @@
     "@reduxjs/toolkit": "^2.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
     "html2pdf.js": "^0.14.0",
     "lucide-react": "^1.7.0",
-    "next": "16.1.7",
+    "next": "^16.1.7",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",

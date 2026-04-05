@@ -1,6 +1,7 @@
 import { ApiService } from "./api";
 
 export interface AuthResponse {
+  id: number;
   full_name: string;
   email: string;
   access_token: string;

@@ -187,14 +187,50 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
+  
   body {
-    @apply bg-background text-foreground transition-colors duration-500;
+    @apply bg-background text-foreground transition-colors duration-500 overflow-hidden;
     letter-spacing: var(--tracking-normal);
-    }
+    height: 100vh;
+    width: 100vw;
+  }
+  
   html {
-    @apply font-sans;
-    }
+    @apply font-sans overflow-hidden;
+    height: 100vh;
+    scroll-behavior: smooth;
+  }
+
+  /* Custom Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.5560 0 0 / 0.2);
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.5560 0 0 / 0.4);
+    background-clip: content-box;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: oklch(0.708 0 0 / 0.2);
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.708 0 0 / 0.4);
+  }
 }
 @utility glow-sm {
   text-shadow: 0 0 4px var(--glow-color, currentColor);

@@ -164,7 +164,7 @@ export default function PositionSpecifications({
                            }}
                            className="col-span-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest text-[9px] rounded-lg shadow-lg shadow-primary/10 flex items-center justify-center gap-2 transition-all"
                         >
-                           DEPLOY APPLICATION <ChevronRight size={14} />
+                           APPLY  <ChevronRight size={14} />
                         </Button>
                         
                         <Button

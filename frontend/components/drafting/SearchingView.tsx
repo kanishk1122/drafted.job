@@ -24,7 +24,7 @@ interface SearchingViewProps {
   onAbortStateChange?: (active: boolean) => void;
 }
 
-const smoothEasting = [0.16, 1, 0.3, 1];
+const smoothEasing = [0.16, 1, 0.3, 1] as const;
 
 // ==========================================
 // OPTIMIZATION 1: MEMOIZED JOB CARD
@@ -179,7 +179,7 @@ export function SearchingView({ thoughts, jobs, rejected, isDone, targetRole, pl
       key="mission-searching"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.5, ease: smoothEasting }}
+      transition={{ duration: 0.5, ease: smoothEasing }}
       className="h-full w-full flex flex-col gap-6 max-w-7xl mx-auto py-2 overflow-hidden relative"
     >
       {/* Abort Confirmation Modal Overlay */}
@@ -426,7 +426,7 @@ export function SearchingView({ thoughts, jobs, rejected, isDone, targetRole, pl
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 340, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.4, ease: smoothEasting }}
+              transition={{ duration: 0.4, ease: smoothEasing }}
               className="shrink-0 flex flex-col min-h-0 bg-[#0a0a0a] rounded-3xl border border-border/50 overflow-hidden font-mono text-[10px] shadow-xl relative transform-gpu"
             >
               <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(255,255,255,0),rgba(255,255,255,0.02)_50%,rgba(255,255,255,0))] bg-[length:100%_4px] opacity-40 z-10" />

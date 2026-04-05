@@ -1,6 +1,8 @@
 {
   "name": "frontend",
   "version": "0.0.1",
+  "description": "Professional AI-driven job scouting and recruitment platform.",
+  "author": "Drafted Jobs Team",
   "main": "electron/main.js",
   "scripts": {
     "dev": "next dev --turbopack",
@@ -9,7 +11,39 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dist": "npm run build && electron-builder",
+    "package": "electron-builder",
+    "prod-test": "npm run build && npx cross-env NODE_ENV=production electron ."
+  },
+  "build": {
+    "appId": "com.drafted.jobs",
+    "productName": "DraftedJobs",
+    "copyright": "Copyright © 2024 Drafted Jobs",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always"
+    }
   },
   "dependencies": {
     "@dicebear/collection": "^9.4.2",

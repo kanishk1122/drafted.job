@@ -444,13 +444,13 @@ class JobScoutService:
         }}
         """
         try:
-            # 30s timeout + Fallback logic
+            # 12s timeout: Fast-fail if NVIDIA/AI signal is sluggish
             completion = await self.nim_client.chat.completions.create(
                 model=settings.MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=1024,
-                timeout=30.0
+                timeout=12.0
             )
             
             response_text = completion.choices[0].message.content
@@ -629,6 +629,10 @@ class JobScoutService:
                 
                 p_idx = platform_map[p_key]
                 platform_saved = 0 # Local count for this turn
+                
+                # Intelligence Integrity tracking for this platform node
+                ai_failure_streak = 0
+                use_heuristic_only = False
                 
                 # Persistence Checkpoint: Sync platform to vault
                 scout_session.current_platform = target_platform
@@ -933,7 +937,23 @@ class JobScoutService:
                             
                             if not job_desc: job_desc = f"{title} at {company} in {loc}"
                             
-                            res = await self._score_job_with_ai(title, job_desc, skills, target_role, summary, experience, years_of_exp)
+                            # 1. AI vs Heuristic Core Decision
+                            if not use_heuristic_only:
+                                res = await self._score_job_with_ai(title, job_desc, skills, target_role, summary, experience, years_of_exp)
+                                if "Cyber-Resilience Fallback" in (res.get("reason") or ""):
+                                    ai_failure_streak += 1
+                                    if ai_failure_streak >= 3:
+                                        yield json.dumps({"type": "thinking", "message": "⚠️ Neural signal degraded. Engaging heuristic logic to maintain mission velocity..."})
+                                        use_heuristic_only = True
+                                else:
+                                    ai_failure_streak = 0
+                            else:
+                                skills_list = [s.strip().lower() for s in skills.split(",")]
+                                desc_lower = (title + " " + job_desc + " " + target_role).lower()
+                                matches = sum(1 for s in skills_list if s in desc_lower)
+                                score = min(100, int((matches / max(len(skills_list), 1)) * 100))
+                                res = {"score": score, "reason": f"Heuristic Analysis (Signal Offline): Found {matches} match vectors.", "skip": score < 40}
+
                             reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
                             
                             posted_at = data.get("posted_at", "").lower()

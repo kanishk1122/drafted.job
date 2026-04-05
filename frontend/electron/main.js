@@ -1,9 +1,16 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, protocol } = require('electron');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const os = require('os');
 const fs = require('fs');
-const isDev = !app.isPackaged;
+const { URL } = require('url');
+
+const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
+
+// Register the custom "app" protocol
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
 
 async function createWindow() {
   const win = new BrowserWindow({
@@ -21,90 +28,84 @@ async function createWindow() {
   if (isDev) {
     win.loadURL('http://localhost:3000');
   } else {
-    win.loadFile(path.join(__dirname, '../out/index.html'));
+    // START HERE: Explicitly use "app://mission"
+    console.log('📦 Production Mode: Loading app://mission/index.html');
+    win.loadURL('app://mission/index.html');
   }
+
+  // Handle errors
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`❌ Load Failed: ${validatedURL} (${errorDescription})`);
+  });
 }
 
-// IPC Handler for Local Browser - FORCING DEDICATED PROFILE
+// IPC Handlers
 ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
-  console.log(`🚀 Forcing Dedicated Profile: ${userId}`);
-  
-  // 1. Setup a clean, persistent path for THIS user
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
-  if (!fs.existsSync(profileDir)) {
-    fs.mkdirSync(profileDir, { recursive: true });
-  }
-
-  // 2. Locate Real Chrome
+  if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
   const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
   const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
   const chromeExe = fs.existsSync(chromePath) ? chromePath : (fs.existsSync(chromePathX86) ? chromePathX86 : 'chrome.exe');
-
-  // 3. Flags to force a SEPARATE instance from your default session
-  const flags = [
-    `--user-data-dir=${profileDir}`, 
-    '--remote-debugging-port=9223', // SWITCHED TO 9223 TO AVOID COLLISION
-    '--remote-debugging-address=0.0.0.0', 
-    '--remote-allow-origins=*',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--new-window', 
-    url
-  ];
-
-  console.log(`Launching: ${chromeExe} with data at ${profileDir}`);
-
-  // 4. Launch as a completely detached Process
-  const child = spawn(chromeExe, flags, {
-    detached: true,
-    stdio: 'ignore',
-    shell: false // Use false to prevent cmd.exe from interfering with flags
-  });
-
+  const flags = [`--user-data-dir=${profileDir}`, '--remote-debugging-port=9223', '--remote-debugging-address=0.0.0.0', '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check', '--new-window', url];
+  const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
   child.unref();
-
   return { success: true, profile: profileDir };
 });
 
-// Dedicated handler: launch Chrome with ONLY the debug port, no URL navigation
-// Used by the scout auto-retry flow
 ipcMain.handle('launch-chrome-debug', async (event, { userId }) => {
-  console.log(`🔧 Auto-launching Chrome for debug on port 9223 — user: ${userId}`);
-
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
-
-  const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-  const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-  const chromeExe = fs.existsSync(chromePath) ? chromePath : (fs.existsSync(chromePathX86) ? chromePathX86 : 'google-chrome');
-
-  const flags = [
-    `--user-data-dir=${profileDir}`,
-    '--remote-debugging-port=9223',
-    '--remote-debugging-address=0.0.0.0',
-    '--remote-allow-origins=*',
-    '--no-first-run',
-    '--no-default-browser-check',
-    // Open a blank tab — no URL needed, scout will navigate
-    'about:blank'
-  ];
-
+  const chromeExe = 'chrome.exe';
+  const flags = [`--user-data-dir=${profileDir}`, '--remote-debugging-port=9223', '--remote-debugging-address=0.0.0.0', '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check', 'about:blank'];
   const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
   child.unref();
-
-  console.log(`✅ Chrome launched at port 9223, profile: ${profileDir}`);
   return { success: true, profile: profileDir };
 });
 
 ipcMain.handle('open-external-browser', async (event, url) => {
-  console.log(`🌍 Opening external link: ${url}`);
-  if (url) {
-    shell.openExternal(url);
-  }
+  if (url) shell.openExternal(url);
   return { success: true };
 });
 
 app.whenReady().then(() => {
+  // Protocol Handler
+  protocol.handle('app', async (req) => {
+    const url = new URL(req.url);
+    let pathname = url.pathname;
+
+    // 3. Map to the local file system
+    let targetPath = path.join(__dirname, '../out', pathname === '/' ? 'index.html' : pathname);
+
+    // 4. Directory Check: If it points to a folder, look for index.html inside it
+    if (fs.existsSync(targetPath) && fs.lstatSync(targetPath).isDirectory()) {
+      targetPath = path.join(targetPath, 'index.html');
+    }
+
+    // 5. Next.js Routing variants (for extension-less paths)
+    if (!fs.existsSync(targetPath)) {
+      if (!path.extname(targetPath)) {
+        // Case 1: /login -> /login.html
+        if (fs.existsSync(targetPath + '.html')) {
+          targetPath += '.html';
+        } 
+        // Case 2: /login -> /login/index.html (if not caught by directory check)
+        else if (fs.existsSync(path.join(targetPath, 'index.html'))) {
+          targetPath = path.join(targetPath, 'index.html');
+        }
+      }
+    }
+
+    // 6. Final safety check: if still not found, return index.html (SPA Fallback)
+    if (!fs.existsSync(targetPath)) {
+      console.warn(`⚠️ Not found, falling back to index: ${targetPath}`);
+      targetPath = path.join(__dirname, '../out/index.html');
+    }
+
+    console.log(`✅ Serving: ${targetPath}`);
+    const { net } = require('electron');
+    return net.fetch('file://' + targetPath);
+  });
+
   createWindow();
 
   app.on('activate', () => {

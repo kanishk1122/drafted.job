@@ -85,7 +85,7 @@ class BrowserService:
                     ws_url = ws_url.replace("localhost", host).replace("127.0.0.1", host)
 
                 print(f"🔗 Connecting via WebSocket: {ws_url}...")
-                browser = await pw.chromium.connect_over_cdp(ws_url)
+                browser = await pw.chromium.connect_over_cdp(ws_url, timeout=10000)
 
                 context = browser.contexts[0] if browser.contexts else await browser.new_context()
                 return context, pw, browser
@@ -108,33 +108,38 @@ class BrowserService:
     async def check_platform_session(self, platform_key: str) -> bool:
         """
         Connects to the local Chrome via CDP and checks if the session is active
-        for the given platform.
+        for the given platform. Improved with slight delay for profile stabilization.
         """
         context = pw = browser = None
         try:
+            # Give Chrome a second to initialize the session in the profile
+            await asyncio.sleep(2)
             context, pw, browser = await self.connect_to_local_chrome()
             
             is_active = False
             cookies = await context.cookies()
+            print(f"📑 Scanned {len(cookies)} cookies for {platform_key}")
             
             if platform_key == "linkedin":
-                is_active = any(c['name'] == 'li_at' for c in cookies)
+                is_active = any(c['name'] in ['li_at', 'li_rm'] for c in cookies)
             elif platform_key == "naukri":
                 # Expanded Naukri Session Vector: checking multiple core recruitment identifiers
                 session_keys = {'S', 'n_vid', 'cticket', 'nauk_at', 'nauk_sid', 'nauk_otl'}
                 is_active = any(c['name'] in session_keys for c in cookies)
             elif platform_key == "foundit":
                 # Foundit Session Vector using user-specified signals
-                is_active = any(c['name'] in ['_uetsid', '_uetvid'] for c in cookies)
+                is_active = any(c['name'] in ['_uetsid', '_uetvid', 'f_at'] for c in cookies)
             elif platform_key == "indeed":
                 # Indeed High-Volume Signal
-                is_active = any(c['name'] in ['CTK', 'INDEED_CSRF_TOKEN'] for c in cookies)
+                is_active = any(c['name'] in ['CTK', 'INDEED_CSRF_TOKEN', 'PPID'] for c in cookies)
             else:
                 is_active = len(cookies) > 0 # General heuristic for other nodes
 
             return is_active
         except Exception as e:
             print(f"⚠️ Session check failed: {str(e)}")
+            # If it's a connection error, we don't want to swallow it silently
+            # but we return false to the UI which handles the 500 error toast
             return False
         finally:
             if browser: await browser.close()

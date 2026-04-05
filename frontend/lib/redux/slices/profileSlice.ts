@@ -3,7 +3,7 @@ import { userService, UserContext, ProfileInsights } from '@/lib/services/user-s
 
 export const fetchProfile = createAsyncThunk(
   'profile/fetchProfile',
-  async (_, { rejectWithValue }) => {
+  async (options: { force?: boolean } = {}, { rejectWithValue }) => {
     try {
       return await userService.getContext();
     } catch (err: any) {
@@ -11,9 +11,13 @@ export const fetchProfile = createAsyncThunk(
     }
   },
   {
-    condition: (_, { getState }) => {
+    condition: (options, { getState }) => {
       const { profile } = getState() as any;
       if (profile.isLoading) return false;
+      
+      // If force is true, we always allow the fetch
+      if (options?.force) return true;
+
       // Profile context is heavy and static. Deep trust (1 hour).
       if (profile.context && (Date.now() - (profile as any).lastFetchedProfile < 3600000)) {
         return false;

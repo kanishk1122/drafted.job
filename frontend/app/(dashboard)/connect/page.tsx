@@ -77,7 +77,7 @@ export default function ConnectPage() {
   const [connecting, setConnecting] = useState<string | null>(null);
 
   useEffect(() => {
-    dispatch(fetchProfile());
+    dispatch(fetchProfile({ force: false }));
   }, [dispatch]);
 
   const [verifying, setVerifying] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export default function ConnectPage() {
       const res = await browserApiService.checkSession(user.userEmail, key);
       if (res.active) {
         toast.success(`${key} session verified! Status updated to READY.`);
-        dispatch(fetchProfile());
+        dispatch(fetchProfile({ force: true }));
       } else {
         toast.error(`No active ${key} session found. Please login in the Chrome window.`);
       }
@@ -172,7 +172,7 @@ export default function ConnectPage() {
 
         <div className="flex w-full xl:w-auto">
            <Button 
-            onClick={() => dispatch(fetchProfile())}
+            onClick={() => dispatch(fetchProfile({ force: true }))}
             variant="outline" 
             className="w-full xl:w-auto h-12 px-6 rounded-xl border-border bg-muted/30 hover:bg-muted font-black tracking-widest text-[11px] uppercase"
            >
@@ -291,28 +291,29 @@ export default function ConnectPage() {
                      <button 
                       onClick={() => handleConnect(platform.id, platform.key)}
                       disabled={connecting === platform.id || verifying === platform.id}
-                      className="h-10 px-4 w-full rounded-xl font-black text-[10px] tracking-widest uppercase transition-all bg-primary text-primary-foreground hover:scale-105 active:scale-95 disabled:opacity-50 flex items-center justify-center whitespace-nowrap"
+                      className={cn(
+                        "h-10 px-4 w-full rounded-xl font-black text-[10px] tracking-widest uppercase transition-all flex items-center justify-center whitespace-nowrap",
+                        connecting === platform.id 
+                          ? "bg-muted text-muted-foreground" 
+                          : "bg-primary text-primary-foreground hover:scale-105 active:scale-95"
+                      )}
                      >
-                       {connecting === platform.id ? "LAUNCHING..." : (
-                         <>
-                             CONNECT <ArrowRight className="w-3 h-3 ml-2 shrink-0" />
-                         </>
-                       )}
+                       {connecting === platform.id ? "LAUNCHING..." : "LAUNCH BROWSER"}
                      </button>
                      
                      <Button 
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       disabled={verifying === platform.id || connecting === platform.id}
                       onClick={() => checkStatus(platform.id, platform.key)}
-                      className="h-8 w-full rounded-lg font-black text-[9px] tracking-tighter uppercase border border-border/40 hover:bg-muted whitespace-nowrap"
+                      className="h-8 w-full rounded-lg font-black text-[9px] tracking-widest uppercase border-primary/20 text-primary hover:bg-primary/5 transition-all"
                      >
-                       {verifying === platform.id ? (
-                         <RefreshCcw className="w-3 h-3 mr-2 animate-spin shrink-0" />
-                       ) : (
-                         <ShieldCheck className="w-3 h-3 mr-2 shrink-0" />
-                       )}
-                       {verifying === platform.id ? "VERIFYING..." : "VERIFY SESSION"}
+                        {verifying === platform.id ? (
+                          <RefreshCcw className="w-3 h-3 mr-2 animate-spin shrink-0" />
+                        ) : (
+                          <ShieldCheck className="w-3 h-3 mr-2 shrink-0" />
+                        )}
+                        {verifying === platform.id ? "VERIFYING..." : "VERIFY SESSION"}
                      </Button>
                   </div>
                 )}

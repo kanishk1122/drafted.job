@@ -54,7 +54,7 @@ export default function DraftingPage() {
     : [];
 
   useEffect(() => {
-    if (!context) dispatch(fetchProfile());
+    if (!context) dispatch(fetchProfile({ force: false }));
 
     const saved = localStorage.getItem(LS_KEY);
     if (saved) {

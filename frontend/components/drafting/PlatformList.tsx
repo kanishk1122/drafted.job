@@ -149,13 +149,22 @@ export function PlatformListItem({ platform }: { platform: SearchChannel }) {
           </div>
        </div>
 
-       <div className="flex items-center gap-3 sm:gap-5 shrink-0">
-          <button 
-             onClick={handleNavigate}
-             className={cn("flex items-center gap-1.5 text-[9px] font-black text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase", !connected && "pointer-events-none opacity-20")}>
-             <span className="hidden lg:inline">Go to Site</span> 
-             <ArrowUpRight size={11} className={cn(connected && "text-primary")} />
-          </button>
+       <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          {connected ? (
+            <button 
+               onClick={handleNavigate}
+               className="flex items-center gap-1.5 text-[9px] font-black text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase cursor-pointer">
+               <span className="hidden lg:inline">Go to Site</span> 
+               <ArrowUpRight size={11} className="text-primary" />
+            </button>
+          ) : (
+            <Link href="/connect" className="cursor-pointer">
+              <button className="flex items-center gap-1.5 text-[9px] font-black text-primary hover:text-primary/80 transition-colors tracking-widest uppercase cursor-pointer">
+                 <Plus size={11} className="text-primary" />
+                 CONNECT
+              </button>
+            </Link>
+          )}
           <Switch 
             checked={connected} 
             disabled={localLoading}
@@ -172,28 +181,17 @@ export function PlatformList() {
   const context = useAppSelector((state: RootState) => state.profile.context);
 
   React.useEffect(() => {
-    dispatch(fetchProfile());
+    dispatch(fetchProfile({ force: false }));
   }, [dispatch]);
 
   const activeTargets = platformTargets.filter(p => (context as any)?.[`${p.key}_active`]);
 
   return (
     <div className="flex flex-col">
-      <div className="divide-y divide-border/20 max-h-[350px] overflow-y-auto">
-        {activeTargets.length > 0 ? (
-          activeTargets.map((platform) => (
-            <PlatformListItem key={platform.id} platform={platform} />
-          ))
-        ) : (
-          <div className="p-10 text-center space-y-3">
-             <div className="w-12 h-12 rounded-full bg-muted/40 flex items-center justify-center mx-auto opacity-40">
-                <ShieldCheck size={20} className="text-muted-foreground" />
-             </div>
-             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-relaxed">
-               No Active Sectors<br/>Verified on Chrome
-             </p>
-          </div>
-        )}
+      <div className="divide-y divide-border/20 max-h-[450px] overflow-y-auto">
+        {platformTargets.map((platform) => (
+          <PlatformListItem key={platform.id} platform={platform} />
+        ))}
       </div>
 
       <div className="p-4 border-t border-border/20 bg-muted/10">

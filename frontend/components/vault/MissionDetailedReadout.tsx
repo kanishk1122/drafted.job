@@ -49,7 +49,7 @@ export default function PositionSpecifications({
                   transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                   className="h-full flex flex-col"
                >
-                  <Card className="h-full w-full bg-card/30 border-border/20 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col relative shadow-xl no-scrollbar">
+                  <Card className="h-full w-full bg-card/30 border-border/20 backdrop-blur-xl rounded-l-2xl overflow-hidden flex flex-col relative shadow-xl no-scrollbar">
                      <div className="flex-1 overflow-y-auto no-scrollbar">
                         {/* Compact Visual Header */}
                         <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent relative p-6 sm:p-8 flex items-end border-b border-border/10">

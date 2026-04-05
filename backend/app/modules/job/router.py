@@ -16,6 +16,8 @@ def list_jobs(
     platform: Optional[str] = None,
     min_score: int = 0,
     q: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     sort_by: str = "newest",
     limit: int = 50, 
     offset: int = 0, 
@@ -26,7 +28,7 @@ def list_jobs(
     Retrieve lightweight job summaries for list/kanban views.
     Only returns essential fields — no description, tech_stack, or match_reason.
     """
-    return job_service.list_jobs(db, current_user.id, status, platform, min_score, q, sort_by, limit, offset)
+    return job_service.list_jobs(db, current_user.id, status, platform, min_score, q, start_date, end_date, sort_by, limit, offset)
 
 @router.post("/", response_model=JobSchema)
 def create_manual_job(

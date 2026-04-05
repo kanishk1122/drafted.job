@@ -27,6 +27,8 @@ export default function BoardPage() {
    const [searchQuery, setSearchQuery] = useState("");
    const [showSearch, setShowSearch] = useState(false);
    const [showSettings, setShowSettings] = useState(false);
+   const [startDate, setStartDate] = useState("");
+   const [endDate, setEndDate] = useState("");
    const [config, setConfig] = useState<PipelineSettingsData | null>(null);
 
    const scrollRef = useRef<HTMLDivElement>(null);
@@ -128,12 +130,14 @@ export default function BoardPage() {
          dispatch(fetchJobs({ 
             q: searchQuery, 
             min_score: config?.minMatchScore || 0,
+            start_date: startDate ? new Date(startDate).toISOString() : undefined,
+            end_date: endDate ? new Date(endDate).toISOString() : undefined,
             limit: 1000 
          }));
       }, 500);
 
       return () => clearTimeout(identifier);
-   }, [searchQuery, config?.minMatchScore, dispatch]);
+   }, [searchQuery, config?.minMatchScore, startDate, endDate, dispatch]);
 
    const jobsByStatus = useMemo(() => {
       const acc: Record<string, any[]> = columns.reduce((map, col) => {
@@ -162,15 +166,35 @@ export default function BoardPage() {
                <p className="text-[8px] sm:text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">Professional Recruitment Tracking & Management</p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
                {showSearch && (
-                  <input 
-                     className="bg-card/40 border-2 border-border/40 rounded-xl px-4 h-12 text-[10px] font-black uppercase tracking-widest text-primary focus:outline-none focus:border-primary/40 animate-in fade-in slide-in-from-right-4"
-                     placeholder="SEARCH POSITIONS..."
-                     autoFocus
-                     value={searchQuery}
-                     onChange={(e) => setSearchQuery(e.target.value)}
-                  />
+                  <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-4">
+                     {/* Temporal Search Vectors */}
+                     <div className="flex items-center gap-2 bg-card/40 border-2 border-border/40 rounded-xl px-3 h-12">
+                        <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest hidden lg:inline">From</span>
+                        <input 
+                           type="date"
+                           className="bg-transparent text-[10px] font-black uppercase tracking-widest text-primary focus:outline-none w-32"
+                           value={startDate}
+                           onChange={(e) => setStartDate(e.target.value)}
+                        />
+                        <span className="text-[8px] font-black text-muted-foreground uppercase tracking-widest hidden lg:inline">To</span>
+                        <input 
+                           type="date"
+                           className="bg-transparent text-[10px] font-black uppercase tracking-widest text-primary focus:outline-none w-32"
+                           value={endDate}
+                           onChange={(e) => setEndDate(e.target.value)}
+                        />
+                     </div>
+
+                     <input 
+                        className="bg-card/40 border-2 border-border/40 rounded-xl px-4 h-12 text-[10px] font-black uppercase tracking-widest text-primary focus:outline-none focus:border-primary/40"
+                        placeholder="SEARCH POSITIONS..."
+                        autoFocus
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                     />
+                  </div>
                )}
                <Button 
                   onClick={handleShareStatus}

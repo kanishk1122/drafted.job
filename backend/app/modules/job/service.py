@@ -53,7 +53,7 @@ class JobService:
         return job
         
     @cached(expire_seconds=900, key_prefix="jobs_list")
-    def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, q: Optional[str] = None, sort_by: str = "newest", limit: int = 50, offset: int = 0):
+    def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, q: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, sort_by: str = "newest", limit: int = 50, offset: int = 0):
         query = db.query(JobRepository).filter(
             JobRepository.user_id == user_id,
             JobRepository.is_active == True
@@ -73,6 +73,22 @@ class JobService:
             query = query.filter(JobRepository.platform.ilike(platform))
         if min_score:
             query = query.filter(JobRepository.heuristic_score >= min_score)
+        
+        if start_date:
+            from datetime import datetime
+            try:
+                dt_start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                query = query.filter(JobRepository.created_at >= dt_start)
+            except (ValueError, TypeError):
+                pass
+        
+        if end_date:
+            from datetime import datetime
+            try:
+                dt_end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                query = query.filter(JobRepository.created_at <= dt_end)
+            except (ValueError, TypeError):
+                pass
         
         if sort_by == "score":
             query = query.order_by(JobRepository.heuristic_score.desc())

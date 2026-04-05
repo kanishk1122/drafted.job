@@ -39,6 +39,8 @@ export interface JobFilterParams {
   platform?: string;
   min_score?: number;
   q?: string;
+  start_date?: string;
+  end_date?: string;
   sort_by?: string;
   limit?: number;
   offset?: number;
@@ -64,6 +66,8 @@ class JobService extends ApiService {
     if (params.platform) queryParts.push(`platform=${params.platform}`);
     if (params.min_score !== undefined) queryParts.push(`min_score=${params.min_score}`);
     if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
+    if (params.start_date) queryParts.push(`start_date=${params.start_date}`);
+    if (params.end_date) queryParts.push(`end_date=${params.end_date}`);
     if (params.sort_by) queryParts.push(`sort_by=${params.sort_by}`);
     if (params.limit !== undefined) queryParts.push(`limit=${params.limit}`);
     if (params.offset !== undefined) queryParts.push(`offset=${params.offset}`);

@@ -70,7 +70,10 @@ export const fetchJobs = createAsyncThunk(
       const isScoutRunning = browser.sessions.some(s => s.status === 'active' || (s as any).status === 'running');
       const hasContent = job.jobs.length > 0;
       
-      if (!isScoutRunning && hasContent && !job.isStale && !(params as any).forceRefresh) {
+      const isPagination = (params as any).offset > 0;
+      const isDateFilter = !!((params as any).start_date || (params as any).end_date);
+      
+      if (!isScoutRunning && hasContent && !job.isStale && !(params as any).forceRefresh && !isPagination && !isDateFilter) {
         // Clinical Skip: No mission active, vault already populated AND not stale. Trust memory (30 min).
         if (now - lastFetched < 1800000) {
             return false;
@@ -78,7 +81,7 @@ export const fetchJobs = createAsyncThunk(
       }
 
       // If scout IS running, limit polling to every 30s to see progress
-      if (isScoutRunning && hasContent && (now - lastFetched < 30000)) {
+      if (isScoutRunning && hasContent && (now - lastFetched < 30000) && !isPagination && !isDateFilter) {
         return false;
       }
 

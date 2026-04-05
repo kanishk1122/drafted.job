@@ -38,25 +38,25 @@ export default function CommandControls({
    setSearchQuery
 }: CommandControlsProps) {
    return (
-      <div className="space-y-4 shrink-0">
-         <div className="flex items-center gap-4 py-1 px-1">
+      <div className="space-y-3 shrink-0">
+         <div className="flex items-center gap-3 py-1 px-1">
             <div className="relative flex-1 group">
-               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
                <Input
-                  placeholder="PROBE MISSION TITLES, COMPANIES, OR TECH STACKS..."
+                  placeholder="SEARCH MISSIONS..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-12 h-12 bg-card/40 border-border border-2 font-black text-[10px] tracking-widest uppercase rounded-xl focus-visible:ring-primary/40 focus-visible:border-primary/60 focus-visible:ring-4 transition-all"
+                  className="pl-10 h-10 bg-card/40 border-border border-2 font-black text-[9px] tracking-widest uppercase rounded-xl focus-visible:ring-primary/40 focus-visible:border-primary/60 focus-visible:ring-4 transition-all"
                />
             </div>
             <div className="flex items-center gap-2">
                <Button
                   variant="outline"
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`h-12 px-6 rounded-xl border-2 transition-all flex items-center justify-center gap-2 ${showFilters ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]' : 'border-border/60 hover:border-primary/40 text-muted-foreground'}`}
+                  className={`h-10 px-4 rounded-xl border-2 transition-all flex items-center justify-center gap-2 ${showFilters ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]' : 'border-border/60 hover:border-primary/40 text-muted-foreground'}`}
                >
-                  <Filter size={18} />
-                  <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Tactical Filters</span>
+                  <Filter size={16} />
+                  <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline">Filters</span>
                </Button>
             </div>
          </div>

@@ -86,9 +86,9 @@ export default function VaultPage() {
    const statuses = ["ALL", "NEW", "APPLIED", "INTERVIEW", "REJECTED"];
 
    return (
-      <div className="flex flex-col h-full bg-card/10 backdrop-blur-md rounded-2xl border border-border/40 overflow-hidden shadow-2xl relative">
+      <div className="flex flex-col h-[calc(100vh-120px)] bg-card/10 backdrop-blur-md rounded-2xl border border-border/40 overflow-hidden shadow-2xl relative">
          {/* Header Section: Compact Industrial Padding */}
-         <div className="p-4 sm:p-5 space-y-4 shrink-0">
+         <div className="p-3 sm:p-4 space-y-2 shrink-0 border-b border-border/10">
             <VaultHeader />
 
             <CommandControls 

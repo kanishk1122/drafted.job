@@ -42,12 +42,12 @@ export default function JobIntelList({
    );
 
    return (
-      <div className="w-full flex-1 flex flex-col min-h-0 relative h-full">
+      <div className="w-full flex-1 flex flex-col min-h-0 relative h-full ">
          {/* Optical Depth Gradients */}
          <div className="absolute top-0 inset-x-0 h-8 bg-gradient-to-b from-background/20 to-transparent z-20 pointer-events-none" />
          <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-background/40 via-background/20 to-transparent z-20 pointer-events-none" />
 
-         <ScrollArea className="flex-1 w-full relative z-10 no-scrollbar">
+         <ScrollArea className="flex-1 w-full relative z-10 no-scrollbar overflow-x-scroll">
             <div className="flex flex-col gap-3 pb-20 pt-2 px-3 sm:px-4 min-h-full">
                
                <AnimatePresence mode="popLayout">

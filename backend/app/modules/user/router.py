@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response, Cookie, HTTPException
+from fastapi import APIRouter, Depends, Response, Cookie, HTTPException, Header
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.user.schema import UserCreate, UserLogin, UserUpdate
@@ -7,13 +7,22 @@ from app.modules.user.service import user_service
 router = APIRouter()
 
 @router.get("/me")
-def get_me(db: Session = Depends(get_db), access_token: str = Cookie(None)):
+def get_me(
+    db: Session = Depends(get_db), 
+    access_token: str = Cookie(None),
+    authorization: str = Header(None)
+):
     """
-    Verify the professional session and retrieve profile data.
+    Verify session via Cookie or Authorization header (fallback for Electron).
     """
-    if not access_token:
-        raise HTTPException(status_code=401, detail="No access token found.")
-    return user_service.get_me(db, access_token)
+    token = access_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
+    if not token:
+        raise HTTPException(status_code=401, detail="No session authority found.")
+        
+    return user_service.get_me(db, token)
 
 @router.post("/register")
 def register(user_in: UserCreate, response: Response, db: Session = Depends(get_db)):

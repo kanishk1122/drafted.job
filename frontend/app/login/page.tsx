@@ -56,6 +56,14 @@ export default function LoginPage() {
         ? await authService.login({ email: formData.email, password: formData.password })
         : await authService.register({ full_name: formData.fullName, email: formData.email, password: formData.password });
 
+      // NEW: Secure Electron Cookie Hand-off
+      if (typeof window !== "undefined" && (window as any).electron) {
+        await (window as any).electron.invoke('set-auth-cookie', {
+          name: 'access_token',
+          value: data.access_token
+        });
+      }
+
       dispatch(loginSuccess({ 
         email: data.email, 
         full_name: data.full_name 

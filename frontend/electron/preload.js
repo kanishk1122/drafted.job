@@ -2,7 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
   invoke: (channel, data) => {
-    let validChannels = ['launch-browser', 'launch-chrome-debug', 'open-external-browser'];
+    let validChannels = [
+      'launch-browser', 
+      'launch-chrome-debug', 
+      'open-external-browser',
+      'set-auth-cookie',
+      'get-auth-cookie'
+    ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, data);
     }

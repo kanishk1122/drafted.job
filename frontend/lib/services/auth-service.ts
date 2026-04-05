@@ -3,6 +3,7 @@ import { ApiService } from "./api";
 export interface AuthResponse {
   full_name: string;
   email: string;
+  access_token: string;
 }
 
 class AuthService extends ApiService {

@@ -67,6 +67,54 @@ ipcMain.handle('open-external-browser', async (event, url) => {
   return { success: true };
 });
 
+// NEW: Native Cookie Management for Auth Tokens
+ipcMain.handle('set-auth-cookie', async (event, { name, value, expirationDate }) => {
+  const { session } = require('electron');
+  
+  // We set it for the backend URL so it gets sent with API requests
+  const backendUrl = 'http://localhost:5000';
+  
+  const cookie = {
+    url: backendUrl,
+    name: name,
+    value: value,
+    domain: 'localhost',
+    path: '/',
+    expirationDate: expirationDate || (Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 30)),
+    sameSite: 'no_restriction',
+    secure: false, // Set false for localhost
+    httpOnly: false
+  };
+
+  try {
+    // Set for backend
+    await session.defaultSession.cookies.set(cookie);
+    // Also set for local mission protocol so frontend can verify it
+    await session.defaultSession.cookies.set({ ...cookie, url: 'app://mission', domain: undefined });
+    
+    console.log(`✅ Cookie Synchronized: ${name}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`❌ Cookie Sync Failed: ${error}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-auth-cookie', async (event, name) => {
+  const { session } = require('electron');
+  try {
+    // Check both locations
+    const cookies = await session.defaultSession.cookies.get({ url: 'http://localhost:5000', name });
+    if (cookies.length > 0) return cookies[0].value;
+    
+    const localCookies = await session.defaultSession.cookies.get({ url: 'app://mission', name });
+    return localCookies.length > 0 ? localCookies[0].value : null;
+  } catch (error) {
+    console.error(`❌ Cookie Get Failed: ${error}`);
+    return null;
+  }
+});
+
 app.whenReady().then(() => {
   // Protocol Handler
   protocol.handle('app', async (req) => {

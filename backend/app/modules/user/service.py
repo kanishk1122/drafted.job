@@ -73,7 +73,11 @@ class UserService:
         access_token = create_access_token(data={"sub": new_user.email})
         self._set_auth_cookie(response, access_token)
 
-        return {"full_name": new_user.full_name, "email": new_user.email}
+        return {
+            "full_name": new_user.full_name, 
+            "email": new_user.email,
+            "access_token": access_token  # NEW: Return token to frontend
+        }
 
     def login_user(self, db: Session, user_in: UserLogin, response: Response):
         user = db.query(UserContext).filter(UserContext.email == user_in.email).first()
@@ -83,7 +87,11 @@ class UserService:
         access_token = create_access_token(data={"sub": user.email})
         self._set_auth_cookie(response, access_token)
 
-        return {"full_name": user.full_name, "email": user.email}
+        return {
+            "full_name": user.full_name, 
+            "email": user.email,
+            "access_token": access_token  # NEW: Return token to frontend
+        }
 
     def logout_user(self, response: Response):
         response.delete_cookie("access_token")

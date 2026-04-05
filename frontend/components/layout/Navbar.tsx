@@ -28,7 +28,7 @@ import { RootState, useAppDispatch, useAppSelector } from "@/lib/redux/store";
 import { authService } from "@/lib/services/auth-service";
 import { logout } from "@/lib/redux/slices/authSlice";
 import { fetchNotifications, markAsRead, markAllAsRead } from "@/lib/redux/slices/notificationSlice";
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 
 export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { theme, setTheme } = useTheme();

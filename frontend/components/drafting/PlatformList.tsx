@@ -78,6 +78,7 @@ export const platformTargets: SearchChannel[] = [
 
 export function PlatformListItem({ platform }: { platform: SearchChannel }) {
   const dispatch = useAppDispatch();
+  const user = useAppSelector((state: RootState) => state.auth);
   const context = useAppSelector((state: RootState) => state.profile.context);
   const connected = (context as any)?.[`${platform.key}_active`] || false;
   const [localLoading, setLocalLoading] = React.useState(false);
@@ -94,40 +95,72 @@ export function PlatformListItem({ platform }: { platform: SearchChannel }) {
     }
   };
 
+  const handleNavigate = async () => {
+    if (!connected) return;
+    
+    // NATIVE PERFORMANCE PIVOT: If in Electron, launch profile LOCALLY for speed
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      try {
+        await (window as any).electron.invoke('launch-browser', {
+          userId: user.userEmail as string,
+          url: platform.url,
+          platform: platform.key
+        });
+        toast.success(`Locally launched ${platform.name} profile.`);
+        return;
+      } catch (err) {
+        console.error("Local launch failed, falling back to server command.");
+      }
+    }
+
+    // SERVER FALLBACK: Command the remote AI profile if local launch isn't possible
+    try {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/browser/navigate?platform=${platform.key}&url=${platform.url}`, {
+        method: 'POST'
+      });
+      if (!resp.ok) throw new Error("Navigation failed");
+      toast.success(`AI dispatched to ${platform.name} profile.`);
+    } catch (err) {
+      toast.error("Bridge Connection Lost: Ensure Chrome is open in Connect mode.");
+    }
+  };
+
   return (
     <div className={cn(
-      "p-4 group transition-all duration-300 flex items-center justify-between",
+      "p-3 sm:p-4 group transition-all duration-300 flex items-center justify-between gap-2 overflow-hidden",
       connected ? "bg-primary/[0.02]" : "opacity-60 hover:opacity-100"
     )}>
-       <div className="flex items-center gap-4">
-          <div className={cn("h-8 w-8 rounded-lg border border-border/40 overflow-hidden flex items-center justify-center transition-all duration-500 bg-white p-1.5", 
+       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          <div className={cn("h-7 w-7 sm:h-8 sm:w-8 shrink-0 rounded-lg border border-border/40 overflow-hidden flex items-center justify-center transition-all duration-500 bg-white p-1", 
              connected ? "grayscale-0 ring-1 ring-primary/20 shadow-lg shadow-primary/10" : "grayscale opacity-40")}>
              <img src={platform.logo} alt={platform.name} className="size-full object-contain" />
           </div>
-          <div>
-             <div className="flex items-center gap-2">
-                <h3 className={cn("text-[11px] font-black uppercase tracking-widest transition-colors", 
+          <div className="min-w-0">
+             <div className="flex items-center gap-1.5 overflow-hidden">
+                <h3 className={cn("text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-colors truncate", 
                   connected ? "text-foreground" : "text-muted-foreground")}>
                   {platform.name}
                 </h3>
-                {connected && <ShieldCheck size={10} className="text-primary animate-pulse" />}
+                {connected && <ShieldCheck size={9} className="text-primary animate-pulse shrink-0" />}
              </div>
-             <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest opacity-60">
+             <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest opacity-60 truncate">
                 {localLoading ? "Connecting..." : (connected ? platform.status : "OFFLINE")}
              </p>
           </div>
        </div>
 
-       <div className="flex items-center gap-5">
-          <a href={platform.url} target="_blank" rel="noopener noreferrer" 
-             className={cn("hidden sm:flex items-center gap-1.5 text-[9px] font-black text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase", !connected && "pointer-events-none opacity-20")}>
-             Go to Site <ArrowUpRight size={10} />
-          </a>
+       <div className="flex items-center gap-3 sm:gap-5 shrink-0">
+          <button 
+             onClick={handleNavigate}
+             className={cn("flex items-center gap-1.5 text-[9px] font-black text-muted-foreground hover:text-primary transition-colors tracking-widest uppercase", !connected && "pointer-events-none opacity-20")}>
+             <span className="hidden lg:inline">Go to Site</span> 
+             <ArrowUpRight size={11} className={cn(connected && "text-primary")} />
+          </button>
           <Switch 
             checked={connected} 
             disabled={localLoading}
             onCheckedChange={handleToggle}
-            className="data-[state=checked]:bg-primary scale-75"
+            className="data-[state=checked]:bg-primary scale-[0.6] sm:scale-75 cursor-pointer"
           />
        </div>
     </div>
@@ -164,8 +197,8 @@ export function PlatformList() {
       </div>
 
       <div className="p-4 border-t border-border/20 bg-muted/10">
-        <Link href="/connect" className="w-full">
-           <button className="w-full h-11 rounded-xl border border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group text-primary">
+        <Link href="/connect" className="w-full cursor-pointer">
+           <button className="w-full h-11 rounded-xl border border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 group text-primary cursor-pointer">
               <Plus size={14} className="group-hover:rotate-90 transition-transform" />
               Add Platform
            </button>

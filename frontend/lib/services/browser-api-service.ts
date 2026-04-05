@@ -12,8 +12,8 @@ class BrowserApiService extends ApiService {
       method: "GET",
     });
   }
-  async fetchSessions(userId: string): Promise<any[]> {
-    return this.request<any[]>(`/browser/sessions?user_id=${userId}`, {
+  async fetchSessions(userId: string, skip: number = 0, limit: number = 20): Promise<any[]> {
+    return this.request<any[]>(`/browser/sessions?user_id=${userId}&skip=${skip}&limit=${limit}`, {
       method: "GET",
     });
   }

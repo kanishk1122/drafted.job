@@ -141,7 +141,7 @@ export function InitiationView({
                       <button
                         onClick={() => isActive ? togglePlatform(pid) : (window.location.href = "/connect")}
                         className={cn(
-                          "w-full flex items-center justify-center gap-2 h-11 px-3 rounded-lg font-black text-[10px] uppercase tracking-wider transition-all duration-300 border-2 relative",
+                          "w-full flex items-center justify-center gap-2 h-11 px-3 rounded-lg font-black text-[10px] uppercase tracking-wider transition-all duration-300 border-2 relative cursor-pointer",
                           isActive 
                             ? isSelected 
                               ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20" 
@@ -168,7 +168,7 @@ export function InitiationView({
         <Button
           onClick={onAbort}
           variant="outline"
-          className="h-14 flex-1 text-[10px] font-black uppercase tracking-[0.3em] border-2 border-border/60 hover:bg-muted/40 rounded-2xl"
+          className="h-14 flex-1 text-[10px] font-black uppercase tracking-[0.3em] border-2 border-border/60 hover:bg-muted/40 rounded-2xl cursor-pointer"
         >
           <X size={16} className="mr-2" /> CANCEL
         </Button>
@@ -177,7 +177,7 @@ export function InitiationView({
             <Button
               onClick={onExecute}
               disabled={!targetRole.trim() || selectedPlatforms.length === 0}
-              className="h-14 w-full bg-primary hover:bg-primary/90 text-primary-foreground text-[10px] font-black uppercase tracking-[0.3em] rounded-2xl shadow-[0_10px_40px_rgba(var(--primary-rgb),0.4)] relative z-10 transition-all disabled:opacity-50 disabled:shadow-none"
+              className="h-14 w-full bg-primary hover:bg-primary/90 text-primary-foreground text-[10px] font-black uppercase tracking-[0.3em] rounded-2xl shadow-[0_10px_40px_rgba(var(--primary-rgb),0.4)] relative z-10 transition-all disabled:opacity-50 disabled:shadow-none cursor-pointer"
             >
               START SEARCH <ChevronRight size={18} className="ml-2" />
             </Button>

@@ -27,6 +27,8 @@ interface BrowserState {
   loading: boolean;
   error: string | null;
   lastFetched: number | null;
+  hasMore: boolean;
+  page: number;
 }
 
 const initialState: BrowserState = {
@@ -34,23 +36,25 @@ const initialState: BrowserState = {
   loading: false,
   error: null,
   lastFetched: null,
+  hasMore: true,
+  page: 0,
 };
 
 export const fetchBrowserSessions = createAsyncThunk(
   'browser/fetchSessions',
-  async (userId: string, { rejectWithValue }) => {
+  async ({ userId, skip = 0, limit = 20 }: { userId: string; skip?: number; limit?: number }, { rejectWithValue }) => {
     try {
-      return await browserApiService.fetchSessions(userId);
+      return await browserApiService.fetchSessions(userId, skip, limit);
     } catch (error: any) {
       return rejectWithValue(error.message);
     }
   },
   {
-    condition: (_, { getState }) => {
+    condition: ({ skip = 0 }, { getState }) => {
       const { browser } = getState() as RootState;
-      // SKIP FETCH if we have sessions and they were fetched recently (last 2 mins)
+      // SKIP FETCH if we have sessions and they were fetched recently (last 2 mins) AND it's not a pagination request
       const now = Date.now();
-      if (browser.sessions.length > 0 && browser.lastFetched && (now - browser.lastFetched < 120000)) {
+      if (skip === 0 && browser.sessions.length > 0 && browser.lastFetched && (now - browser.lastFetched < 120000)) {
         return false;
       }
       return true;
@@ -82,6 +86,10 @@ const browserSlice = createSlice({
       if (index !== -1) {
         state.sessions[index] = { ...state.sessions[index], ...action.payload };
       }
+    },
+    resetPagination: (state) => {
+      state.page = 0;
+      state.hasMore = true;
     }
   },
   extraReducers: (builder) => {
@@ -92,7 +100,20 @@ const browserSlice = createSlice({
       })
       .addCase(fetchBrowserSessions.fulfilled, (state, action) => {
         state.loading = false;
-        state.sessions = action.payload;
+        const newSessions = action.payload;
+        const skip = action.meta.arg.skip || 0;
+        
+        if (skip === 0) {
+          state.sessions = newSessions;
+        } else {
+          // Append and remove duplicates just in case
+          const existingIds = new Set(state.sessions.map(s => String(s.id)));
+          const filtered = newSessions.filter(s => !existingIds.has(String(s.id)));
+          state.sessions = [...state.sessions, ...filtered];
+        }
+        
+        state.hasMore = newSessions.length === (action.meta.arg.limit || 20);
+        state.page = skip === 0 ? 1 : state.page + 1;
         state.lastFetched = Date.now();
       })
       .addCase(fetchBrowserSessions.rejected, (state, action) => {
@@ -107,5 +128,5 @@ const browserSlice = createSlice({
   },
 });
 
-export const { addLocalSession, updateSessionLocally } = browserSlice.actions;
+export const { addLocalSession, updateSessionLocally, resetPagination } = browserSlice.actions;
 export default browserSlice.reducer;

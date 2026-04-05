@@ -153,4 +153,23 @@ class BrowserService:
             await browser.close()
             await pw.stop()
 
+    async def navigate_locally(self, task_url: str):
+        """
+        Navigates the already open local Chrome to a specific platform URL.
+        Does NOT close the browser, allows user to continue using it.
+        """
+        context = pw = browser = None
+        try:
+            context, pw, browser = await self.connect_to_local_chrome()
+            # Reuse first page or create new one if empty
+            pages = context.pages
+            page = pages[0] if pages else await context.new_page()
+            
+            await page.goto(task_url)
+            await page.bring_to_front()
+            print(f"🎯 AI-Controlled Navigation: {task_url}")
+        finally:
+            if pw: await pw.stop()
+            # WE DO NOT CLOSE browser OR context HERE so the user can interact.
+
 browser_service = BrowserService()

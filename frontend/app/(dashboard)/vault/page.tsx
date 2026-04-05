@@ -60,8 +60,6 @@ export default function VaultPage() {
    }, [searchParams, dispatch]);
 
    React.useEffect(() => {
-     // MISSION-AWARE FETCH: Redux condition node will skip redundant calls.
-     // STOP using resetJobs() here - it was nuking the cache and forcing fetches.
      dispatch(fetchJobs({ 
        platform: selectedPlatform, 
        status: selectedStatus === "ALL" ? undefined : selectedStatus.toLowerCase(),
@@ -88,8 +86,9 @@ export default function VaultPage() {
    const statuses = ["ALL", "NEW", "APPLIED", "INTERVIEW", "REJECTED"];
 
    return (
-      <div className="flex flex-col h-full bg-background/40 backdrop-blur-md rounded-[2.5rem] border-2 border-border/40 overflow-hidden shadow-2xl relative">
-         <div className="p-8 pb-4 space-y-8">
+      <div className="flex flex-col h-full bg-card/10 backdrop-blur-md rounded-2xl border border-border/40 overflow-hidden shadow-2xl relative">
+         {/* Header Section: Compact Industrial Padding */}
+         <div className="p-4 sm:p-5 space-y-4 shrink-0">
             <VaultHeader />
 
             <CommandControls 
@@ -106,9 +105,12 @@ export default function VaultPage() {
             />
          </div>
 
-         <div className="flex-1 flex flex-col lg:flex-row min-h-0 relative border-t border-border/20">
+         {/* Main Workspace: Side-by-Side Locked Viewport */}
+         <div className="flex-1 flex flex-col lg:flex-row min-h-0 relative border-t border-border/10 overflow-hidden">
+            
+            {/* Left Column: Job List (Independent Scroll) */}
             <div className={cn(
-               "w-full lg:w-[450px] border-r border-border/20 flex flex-col min-h-0",
+               "w-full lg:w-[380px] xl:w-[420px] border-r border-border/10 flex flex-col min-h-0 bg-background/20",
                selectedJob && "hidden lg:flex"
             )}>
                <JobIntelList 
@@ -121,28 +123,29 @@ export default function VaultPage() {
                />
             </div>
 
+            {/* Right Column: Mission Readout (Independent Scroll) */}
             <div className={cn(
-               "flex-1 flex flex-col lg:h-[83vh] md:h-[40vh]",
+               "flex-1 flex flex-col min-h-0 bg-background/5",
                !selectedJob && "hidden lg:flex"
             )}>
                {selectedJob && (
-                  <div className="lg:hidden p-4 border-b border-border/20 flex items-center justify-between bg-card/40 backdrop-blur-xl shrink-0">
+                  <div className="lg:hidden p-3 border-b border-border/10 flex items-center justify-between bg-card/60 backdrop-blur-xl shrink-0">
                       <Button 
                          variant="ghost" 
                          onClick={() => dispatch(setSelectedJobId(null))}
-                         className="text-[10px] font-black uppercase tracking-widest gap-2 h-auto py-2"
+                         className="text-[9px] font-black uppercase tracking-widest gap-2 h-auto py-1.5"
                       >
-                         <ChevronLeft size={16} /> RETURN TO RECORDS
+                         <ChevronLeft size={14} /> BACK TO RECORDS
                       </Button>
-                     <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-primary/40 text-primary bg-primary/5">
-                        ACTIVE MISSION
+                     <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-primary/30 text-primary bg-primary/5">
+                        ACTIVE READOUT
                      </Badge>
                   </div>
                )}
                
                {detailLoading && !selectedJob ? (
                    <div className="flex-1 flex items-center justify-center">
-                      <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+                      <div className="h-8 w-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
                    </div>
                 ) : (
                    <MissionDetailedReadout 

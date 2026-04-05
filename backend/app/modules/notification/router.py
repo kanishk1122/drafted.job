@@ -8,7 +8,7 @@ from .schema import NotificationResponse, NotificationListResponse, Notification
 from .service import NotificationService
 from app.modules.user.model import UserContext
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter()
 
 @router.get("/", response_model=NotificationListResponse)
 async def get_user_notifications(

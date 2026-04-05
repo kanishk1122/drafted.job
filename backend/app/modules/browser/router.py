@@ -18,8 +18,13 @@ async def get_profile_status(user_id: str):
     return {"user_id": user_id, "profile_path": path, "stored": exists}
 
 @router.get("/sessions")
-async def get_scout_sessions(user_id: str, db: Session = Depends(get_db)):
-    """Return the user's scout session history from the database."""
+async def get_scout_sessions(
+    user_id: str, 
+    skip: int = 0, 
+    limit: int = 20, 
+    db: Session = Depends(get_db)
+):
+    """Return the user's scout session history from the database with professional pagination."""
     from app.modules.user.model import UserContext
     from app.modules.browser.session_model import ScoutSession
 
@@ -31,7 +36,8 @@ async def get_scout_sessions(user_id: str, db: Session = Depends(get_db)):
         db.query(ScoutSession)
         .filter(ScoutSession.user_id == user.id)
         .order_by(ScoutSession.created_at.desc())
-        .limit(50)
+        .offset(skip)
+        .limit(limit)
         .all()
     )
 
@@ -188,4 +194,15 @@ async def delete_scout_session(session_id: int, user_id: str, db: Session = Depe
     db.commit()
     
     return {"success": True}
+
+@router.post("/navigate")
+async def navigate_to_platform(platform: str, url: str):
+    """
+    Commands the AI to navigate the controlled local Chrome profile to a specific record.
+    """
+    try:
+        await browser_service.navigate_locally(url)
+        return {"success": True, "message": f"Navigation to {platform} initiated on controlled profile."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Navigation failed: {str(e)}. Ensure Chrome is open in Connect mode.")
 

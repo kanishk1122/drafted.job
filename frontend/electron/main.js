@@ -45,15 +45,31 @@ ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
   
   let chromeExe = 'chrome';
+  let chromeFound = false;
+
   if (process.platform === 'win32') {
     const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-    chromeExe = fs.existsSync(chromePath) ? chromePath : (fs.existsSync(chromePathX86) ? chromePathX86 : 'chrome.exe');
+    if (fs.existsSync(chromePath)) {
+      chromeExe = chromePath;
+      chromeFound = true;
+    } else if (fs.existsSync(chromePathX86)) {
+      chromeExe = chromePathX86;
+      chromeFound = true;
+    } else {
+      chromeExe = 'chrome.exe'; // Hope it's in PATH
+    }
   } else if (process.platform === 'linux') {
-    chromeExe = 'google-chrome'; // Standard on Ubuntu/Debian
+    chromeExe = 'google-chrome';
+    chromeFound = true; // Assume standard install on linux for now
   } else if (process.platform === 'darwin') {
     chromeExe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    chromeFound = fs.existsSync(chromeExe);
   }
+
+  console.log(`🚀 Triggering Browser Launch: [${platform}] for ${userId}`);
+  console.log(`📍 Profile: ${profileDir}`);
+  console.log(`⚙️ Executable: ${chromeExe}`);
 
   const flags = [
     `--user-data-dir=${profileDir}`, 
@@ -66,9 +82,25 @@ ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
     url
   ];
   
-  const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
-  child.unref();
-  return { success: true, profile: profileDir };
+  try {
+    const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
+    
+    return new Promise((resolve, reject) => {
+      child.on('error', (err) => {
+        console.error(`❌ Spawn Error: ${err.message}`);
+        resolve({ success: false, error: `Failed to start Chrome: ${err.message}` });
+      });
+
+      // Give it a moment to see if it crashes immediately
+      setTimeout(() => {
+        child.unref();
+        resolve({ success: true, profile: profileDir });
+      }, 500);
+    });
+  } catch (err) {
+    console.error(`❌ Launch Failure: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('launch-chrome-debug', async (event, { userId }) => {

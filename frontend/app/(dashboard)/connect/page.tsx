@@ -121,15 +121,20 @@ export default function ConnectPage() {
     if ((window as any).electron) {
       toast.info(`Launching local browser for ${key}...`);
       try {
-        await (window as any).electron.invoke('launch-browser', { 
+        const result = await (window as any).electron.invoke('launch-browser', { 
             userId: user.userEmail, 
             url, 
             platform: key 
         });
-        toast.success(`Local ${key} panel active. Profile is stored on your device.`);
-        setTimeout(() => checkStatus(platformId, key), 15000);
+        
+        if (result.success) {
+          toast.success(`Local ${key} panel active. Profile is stored on your device.`);
+          setTimeout(() => checkStatus(platformId, key), 15000);
+        } else {
+          toast.error(result.error || `Local launch failed for ${key}. Check Chrome installation.`);
+        }
       } catch (err) {
-        toast.error("Local launch failed. Are you in the desktop app?");
+        toast.error("Bridge Error: The native Electron module is unreachable.");
       }
     } else {
       toast.info(`Initializing Server-bound context for ${key}...`);

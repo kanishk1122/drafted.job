@@ -17,6 +17,7 @@ import {
   Shield,
   Brain,
   PenTool,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ export function Sidebar({ collapsed }: { collapsed?: boolean }) {
             <NavItem label="Job Vault" icon={<Bookmark size={18} />} active={isPageActive("/vault")} href="/vault" collapsed={collapsed} />
             <NavItem label="Pipeline" icon={<Kanban size={18} />} active={isPageActive("/board")} href="/board" collapsed={collapsed} />
             <NavItem label="Resume Forge" icon={<PenTool size={18} />} active={isPageActive("/resume-forge")} href="/resume-forge" collapsed={collapsed} />
+            <NavItem label="Neural Network" icon={<Network size={18} />} active={isPageActive("/connections")} href="/connections" collapsed={collapsed} />
             <NavItem label="My Profile" icon={<Brain size={18} />} active={isPageActive("/profile")} href="/profile" collapsed={collapsed} />
           </div>
 

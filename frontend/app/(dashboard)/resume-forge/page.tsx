@@ -8,21 +8,24 @@ import {
   RefreshCcw, 
   Briefcase, 
   Layers, 
-  Cpu, 
   Eye, 
-  Layout, 
-  CheckCircle2,
   ChevronRight,
   Zap,
   GraduationCap,
   X,
-  Plus
+  Plus,
+  Palette,
+  Maximize,
+  StretchVertical,
+  Undo2,
+  Redo2,
+  Keyboard
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import { 
   Dialog, 
   DialogContent, 
@@ -36,10 +39,20 @@ import { useAppDispatch, useAppSelector, RootState } from "@/lib/redux/store";
 import { fetchMyResume } from "@/lib/redux/slices/resumeSlice";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { 
+  Document, 
+  Page, 
+  Text, 
+  View, 
+  StyleSheet, 
+  pdf, 
+} from "@react-pdf/renderer";
 
 // --- High-Fidelity A4 Constants ---
 const A4_WIDTH = 794; 
 const A4_HEIGHT = 1123; 
+
+type TemplateID = 'INDUSTRIAL' | 'CLASSIC' | 'MODERN' | 'STEALTH' | 'CREATIVE' | 'EXECUTIVE';
 
 export default function ResumeForgePage() {
   const dispatch = useAppDispatch();
@@ -47,60 +60,130 @@ export default function ResumeForgePage() {
   const { context } = useAppSelector((state: RootState) => state.profile);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sectionsRef = useRef<any[]>([]); 
+  const sectionsRef = useRef<any[]>(SectionIDMapping); 
   
   const [forgeState, setForgeState] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isForgeModalOpen, setIsForgeModalOpen] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [refineInstructions, setRefineInstructions] = useState("");
   const [editingData, setEditingData] = useState<any>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateID>('INDUSTRIAL');
+  const [pageMargin, setPageMargin] = useState(45);
+  const [componentGap, setComponentGap] = useState(30);
 
+  // Initialize and persist state
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('RESUME_FORGE_STATE');
       if (saved) {
-        setForgeState(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setForgeState(parsed);
+        setHistory([parsed]);
+        setHistoryIndex(0);
       } else if (resume) {
         const initialState = {
-          full_name: resume.full_name,
-          email: resume.email,
-          location: resume.location,
-          summary: resume.summary,
-          skills: typeof resume.skills === 'string' ? JSON.parse(resume.skills) : resume.skills,
-          experience: typeof resume.experience === 'string' ? JSON.parse(resume.experience) : resume.experience,
-          education: typeof resume.education === 'string' ? JSON.parse(resume.education) : resume.education || [],
+          full_name: resume.full_name || "",
+          email: resume.email || "",
+          location: resume.location || "",
+          summary: resume.summary || "",
+          skills: typeof resume.skills === 'string' ? JSON.parse(resume.skills) || [] : resume.skills || [],
+          experience: typeof resume.experience === 'string' ? JSON.parse(resume.experience) || [] : resume.experience || [],
+          education: typeof resume.education === 'string' ? JSON.parse(resume.education) || [] : resume.education || [],
         };
         setForgeState(initialState);
+        setHistory([initialState]);
+        setHistoryIndex(0);
         localStorage.setItem('RESUME_FORGE_STATE', JSON.stringify(initialState));
       }
     }
   }, [resume]);
 
-  useEffect(() => {
-    if (forgeState && typeof window !== 'undefined') {
-       localStorage.setItem('RESUME_FORGE_STATE', JSON.stringify(forgeState));
+  const updateForgeState = useCallback((newState: any) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newState);
+    if (newHistory.length > 50) newHistory.shift(); 
+    
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    setForgeState(newState);
+    localStorage.setItem('RESUME_FORGE_STATE', JSON.stringify(newState));
+  }, [history, historyIndex]);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevIndex = historyIndex - 1;
+      setHistoryIndex(prevIndex);
+      setForgeState(history[prevIndex]);
+      localStorage.setItem('RESUME_FORGE_STATE', JSON.stringify(history[prevIndex]));
+      toast.info("UNDO COMPLETE", { icon: <Undo2 size={12}/> });
     }
-  }, [forgeState]);
+  }, [history, historyIndex]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      setHistoryIndex(nextIndex);
+      setForgeState(history[nextIndex]);
+      localStorage.setItem('RESUME_FORGE_STATE', JSON.stringify(history[nextIndex]));
+      toast.info("REDO COMPLETE", { icon: <Redo2 size={12}/> });
+    }
+  }, [history, historyIndex]);
+
+  // Integrated Keyboard Interface
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Intercept Meta (CMD) or Control
+        const isControl = e.ctrlKey || e.metaKey;
+        if (!isControl) return;
+
+        const key = e.key.toLowerCase();
+        
+        if (key === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) handleRedo(); // Ctrl+Shift+Z for Redo fallback
+            else handleUndo();
+        } else if (key === 'y') {
+            e.preventDefault();
+            handleRedo();
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
 
   const handleDownloadPNG = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png', 1.0);
     const link = document.createElement('a');
-    link.download = `resume_forge_${forgeState?.full_name?.toLowerCase().replace(/ /g, '_') || 'final'}.png`;
-    link.href = dataUrl;
+    const safeName = (forgeState?.full_name || "final").toLowerCase().split(' ').join('_');
+    link.download = `resume_forge_${safeName}.png`; link.href = dataUrl;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     toast.success("PNG BINARY EXPORTED");
   };
 
-  const handleDownloadPDF = () => {
-    toast.success("TEXT-BASED PDF FORGE INITIALIZED", {
-        description: "Executing high-fidelity DOM-to-PDF synchronization."
-    });
-    setTimeout(() => {
-        window.print();
-    }, 150);
+  const handleDownloadPDF = async () => {
+    if (!forgeState) return;
+    toast.success("PDF GENERATION STARTED");
+    try {
+        const doc = <ResumePDF data={forgeState} template={selectedTemplate} pageMargin={pageMargin} componentGap={componentGap} />;
+        const asBlob = await pdf(doc).toBlob();
+        const url = URL.createObjectURL(asBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        const safeName = (forgeState?.full_name || "final").toLowerCase().split(' ').join('_');
+        link.download = `resume_${safeName}.pdf`;
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success("TEXT-BASED PDF EXPORTED");
+    } catch (err) {
+        console.error(err); toast.error("PDF FORGE BREAKDOWN");
+    }
   };
 
   useEffect(() => {
@@ -117,146 +200,129 @@ export default function ResumeForgePage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = A4_WIDTH * 2;
-    canvas.height = A4_HEIGHT * 2;
-    ctx.scale(2, 2);
+    canvas.width = A4_WIDTH * 2; canvas.height = A4_HEIGHT * 2; ctx.scale(2, 2);
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+    const config: Record<TemplateID, any> = {
+      INDUSTRIAL: { primary: '#2563eb', text: '#1a1a1a', secondary: '#64748b', font: 'Helvetica', headerAlign: 'center' },
+      CLASSIC: { primary: '#000000', text: '#000000', secondary: '#333333', font: 'Times-Roman', headerAlign: 'center', noSkillBg: true },
+      MODERN: { primary: '#6366f1', text: '#1e293b', secondary: '#6366f1', font: 'Helvetica', headerAlign: 'left' },
+      STEALTH: { primary: '#0f172a', text: '#334155', secondary: '#94a3b8', font: 'Helvetica', headerAlign: 'center' },
+      CREATIVE: { primary: '#ec4899', text: '#312e81', secondary: '#fb7185', font: 'Helvetica', headerAlign: 'left' },
+      EXECUTIVE: { primary: '#059669', text: '#064e3b', secondary: '#10b981', font: 'Helvetica', headerAlign: 'center' }
+    };
 
-    const margin = 55;
-    const eduList = Array.isArray(forgeState.education) 
-        ? forgeState.education 
-        : (forgeState.education?.education || forgeState.education?.EDUCATION || []);
+    const t = config[selectedTemplate];
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
 
-    const totalExpItems = (forgeState.experience || []).length;
-    const totalEduItems = eduList.length;
-    const isDense = (totalExpItems + totalEduItems) > 4;
+    const margin = pageMargin; const gap = componentGap;
+    const eduList = Array.isArray(forgeState.education) ? forgeState.education : (forgeState.education?.education || forgeState.education?.EDUCATION || []);
+
+    let currentY = margin + 35;
+    const sections: any[] = [];
+
+    // Header
+    ctx.textAlign = t.headerAlign as "center" | "left";
+    const headerX = t.headerAlign === 'center' ? A4_WIDTH / 2 : margin;
+    if (selectedTemplate === 'MODERN' || selectedTemplate === 'CREATIVE') {
+      ctx.fillStyle = t.primary; ctx.fillRect(margin - 15, currentY - 35, 4, 75);
+    }
+    ctx.fillStyle = t.text; ctx.font = `900 32px ${t.font}, sans-serif`;
+    ctx.fillText((String(forgeState.full_name || "NAME")).toUpperCase(), headerX, currentY);
     
-    const spacing = { header: isDense ? 35 : 45, section: isDense ? 25 : 35, item: isDense ? 18 : 22, paragraph: isDense ? 16 : 19 };
+    currentY += (gap / 1.5) + 30; 
+    ctx.font = `700 12px ${t.font}, sans-serif`; ctx.fillStyle = t.secondary;
+    ctx.fillText(`${forgeState.email}  |  ${forgeState.location || "LOCATION"}`, headerX, currentY);
 
-    let currentY = 85;
-    sectionsRef.current = [];
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '900 32px Inter, sans-serif';
-    ctx.fillText((forgeState.full_name || "KANISHK SONI").toUpperCase(), A4_WIDTH / 2, currentY);
-    currentY += 22;
-    ctx.font = '700 11px Inter, sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(`${forgeState.email}  |  ${forgeState.location || "RAJASTHAN"}`, A4_WIDTH / 2, currentY);
-
-    currentY += spacing.header;
-    ctx.strokeStyle = '#f1f5f9';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(margin, currentY); ctx.lineTo(A4_WIDTH - margin, currentY); ctx.stroke();
-
-    currentY += spacing.section;
+    currentY += gap + 20;
 
     const drawSectionHeader = (title: string, y: number) => {
-       ctx.textAlign = 'left';
-       ctx.fillStyle = '#2563eb';
-       ctx.font = '900 9px Inter, sans-serif';
-       ctx.fillText(title.toUpperCase(), margin, y);
-       ctx.strokeStyle = '#eff6ff';
-       ctx.lineWidth = 0.5;
-       ctx.beginPath();
-       ctx.moveTo(margin, y + 5); ctx.lineTo(A4_WIDTH - margin, y + 5); ctx.stroke();
-       return y - 10;
+       ctx.textAlign = 'left'; ctx.fillStyle = t.primary; ctx.font = `900 12px ${t.font}, sans-serif`;
+       if (selectedTemplate === 'EXECUTIVE') {
+          ctx.fillRect(margin, y - 18, A4_WIDTH - (margin * 2), 24); ctx.fillStyle = '#fff';
+          ctx.fillText(title.toUpperCase(), margin + 15, y - 1);
+       } else {
+          ctx.fillText(title.toUpperCase(), margin, y);
+       }
+       return y - 15;
     };
 
     // Summary
     const summaryStart = drawSectionHeader("Professional Summary", currentY);
-    currentY += 25;
-    ctx.fillStyle = '#334155';
-    ctx.font = 'italic 500 13px Inter, sans-serif';
+    currentY += 35; ctx.textAlign = 'left'; ctx.fillStyle = '#1e293b'; ctx.font = `italic 500 13.5px ${t.font}, sans-serif`;
     const summaryLines = wrapText(ctx, `"${forgeState.summary || ""}"`, A4_WIDTH - (margin * 2));
-    summaryLines.forEach(line => { ctx.fillText(line, margin, currentY); currentY += spacing.paragraph; });
-    sectionsRef.current.push({ id: 'summary', startY: summaryStart, endY: currentY });
+    summaryLines.forEach(line => { ctx.fillText(line, margin, currentY); currentY += 22; });
+    sections.push({ id: 'summary', startY: summaryStart, endY: currentY });
 
-    currentY += spacing.section;
+    currentY += gap;
 
     // Technical Skills
     const skillsStart = drawSectionHeader("Technical Skills", currentY);
-    currentY += 25;
-    let skillX = margin;
-    ctx.font = '900 8.5px Inter, sans-serif';
-    (forgeState.skills || []).forEach((skill: string) => {
-       const textWidth = ctx.measureText(skill.toUpperCase()).width;
-       ctx.fillStyle = '#f8fafc';
-       ctx.fillRect(skillX, currentY - 14, textWidth + 14, 18);
-       ctx.strokeStyle = '#2563eb15';
-       ctx.strokeRect(skillX, currentY - 14, textWidth + 14, 18);
-       ctx.fillStyle = '#0f172a';
-       ctx.fillText(skill.toUpperCase(), skillX + 7, currentY - 1);
-       skillX += textWidth + 24;
-       if (skillX > A4_WIDTH - margin - 50) { skillX = margin; currentY += 22; }
+    currentY += 35; let skillX = margin; ctx.font = `900 9.5px ${t.font}, sans-serif`; ctx.textAlign = 'left';
+    (forgeState.skills || []).forEach((skill: any, i: number) => {
+       const skillText = String(skill);
+       if (t.noSkillBg) {
+          ctx.fillStyle = t.text; const label = i === 0 ? skillText.toUpperCase() : ` • ${skillText.toUpperCase()}`;
+          const textWidth = ctx.measureText(label).width; ctx.fillText(label, skillX, currentY - 1); skillX += textWidth + 10;
+       } else {
+          const textWidth = ctx.measureText(skillText.toUpperCase()).width;
+          ctx.fillStyle = '#f1f5f9'; ctx.fillRect(skillX, currentY - 20, textWidth + 24, 26);
+          ctx.fillStyle = t.text; ctx.fillText(skillText.toUpperCase(), skillX + 12, currentY - 1); skillX += textWidth + 34;
+       }
+       if (skillX > A4_WIDTH - margin - 50) { skillX = margin; currentY += 32; }
     });
-    sectionsRef.current.push({ id: 'skills', startY: skillsStart, endY: currentY });
+    sections.push({ id: 'skills', startY: skillsStart, endY: currentY });
 
-    currentY += spacing.section;
+    currentY += gap + 10;
 
     // Experience
     const expStart = drawSectionHeader("Professional Experience", currentY);
-    currentY += 30;
+    currentY += 40;
     (forgeState.experience || []).forEach((exp: any) => {
-       ctx.fillStyle = '#0f172a'; ctx.font = '900 15px Inter, sans-serif'; ctx.fillText((exp.role || "").toUpperCase(), margin, currentY);
-       ctx.textAlign = 'right'; ctx.fillStyle = '#94a3b8'; ctx.font = '800 8.5px Inter, sans-serif'; ctx.fillText((exp.duration || exp.period || "PRESENT").toUpperCase(), A4_WIDTH - margin, currentY);
-       ctx.textAlign = 'left'; currentY += 16; ctx.fillStyle = '#2563eb'; ctx.font = '900 10.5px Inter, sans-serif'; ctx.fillText((exp.company || "").toUpperCase(), margin, currentY);
-       currentY += 18; ctx.fillStyle = '#475569'; ctx.font = '500 11.5px Inter, sans-serif';
-       const expLines = wrapText(ctx, exp.description || "", A4_WIDTH - (margin * 2));
-       expLines.forEach(line => { ctx.fillText(line, margin, currentY); currentY += spacing.paragraph; });
-       currentY += spacing.item;
+       ctx.textAlign = 'left'; ctx.fillStyle = t.text; ctx.font = `900 15px ${t.font}, sans-serif`;
+       ctx.fillText((String(exp.role || "")).toUpperCase(), margin, currentY);
+       ctx.textAlign = 'right'; ctx.fillStyle = t.secondary; ctx.font = `800 10.5px ${t.font}, sans-serif`;
+       ctx.fillText((String(exp.duration || exp.period || "PRESENT")).toUpperCase(), A4_WIDTH - margin, currentY);
+       
+       ctx.textAlign = 'left'; currentY += 22; ctx.fillStyle = t.primary; ctx.font = `900 12.5px ${t.font}, sans-serif`;
+       ctx.fillText((String(exp.company || "")).toUpperCase(), margin, currentY);
+       
+       currentY += 24; ctx.fillStyle = '#475569'; ctx.font = `500 12.5px ${t.font}, sans-serif`;
+       const expLines = wrapText(ctx, String(exp.description || ""), A4_WIDTH - (margin * 2));
+       expLines.forEach(line => { ctx.fillText(line, margin, currentY); currentY += 20; });
+       currentY += 35;
     });
-    sectionsRef.current.push({ id: 'experience', startY: expStart, endY: currentY });
+    sections.push({ id: 'experience', startY: expStart, endY: currentY });
 
     // Education
     if (eduList.length > 0) {
-        if (currentY + 100 > A4_HEIGHT) currentY -= 20;
+        currentY += gap - 10; if (currentY + 120 > A4_HEIGHT) currentY -= 20;
         const eduStart = drawSectionHeader("Education", currentY);
-        currentY += 30;
+        currentY += 40;
         eduList.forEach((edu: any) => {
-            ctx.fillStyle = '#0f172a'; ctx.font = '900 14px Inter, sans-serif'; ctx.fillText((edu.degree || "").toUpperCase(), margin, currentY);
-            ctx.textAlign = 'right'; ctx.fillStyle = '#94a3b8'; ctx.font = '800 8.5px Inter, sans-serif'; ctx.fillText((edu.duration || "").toUpperCase(), A4_WIDTH - margin, currentY);
-            ctx.textAlign = 'left'; currentY += 16; ctx.fillStyle = '#475569'; ctx.font = 'bold 10px Inter, sans-serif'; ctx.fillText((edu.institution || "").toUpperCase(), margin, currentY);
-            currentY += spacing.item;
+            ctx.textAlign = 'left'; ctx.fillStyle = t.text; ctx.font = `900 14px ${t.font}, sans-serif`;
+            ctx.fillText((String(edu.degree || "")).toUpperCase(), margin, currentY);
+            ctx.textAlign = 'right'; ctx.fillStyle = t.secondary; ctx.font = `800 10.5px ${t.font}, sans-serif`;
+            ctx.fillText((String(edu.duration || "")).toUpperCase(), A4_WIDTH - margin, currentY);
+            
+            ctx.textAlign = 'left'; currentY += 22; ctx.fillStyle = t.primary; ctx.font = `bold 12px ${t.font}, sans-serif`;
+            ctx.fillText((String(edu.institution || "")).toUpperCase(), margin, currentY);
+            currentY += 30;
         });
-        sectionsRef.current.push({ id: 'education', startY: eduStart, endY: currentY });
+        sections.push({ id: 'education', startY: eduStart, endY: currentY });
     }
-  }, [forgeState]);
+    sectionsRef.current = sections;
+  }, [forgeState, selectedTemplate, pageMargin, componentGap]);
 
   useEffect(() => {
-    const timer = setTimeout(drawCanvas, 100);
-    return () => clearTimeout(timer);
-  }, [drawCanvas, forgeState]);
+    const timer = setTimeout(drawCanvas, 100); return () => clearTimeout(timer);
+  }, [drawCanvas, forgeState, selectedTemplate, pageMargin, componentGap]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scale = A4_WIDTH / rect.width;
+    const canvas = canvasRef.current; if (!canvas) return;
+    const rect = canvas.getBoundingClientRect(); const scale = A4_WIDTH / rect.width;
     const y = (e.clientY - rect.top) * scale;
     const section = sectionsRef.current.find(s => y >= s.startY && y <= s.endY);
     if (section) handleOpenForge(section.id);
-  };
-
-  const handleOpenForge = (id: string | null) => {
-    if (!id) return;
-    setSelectedNodeId(id);
-    let val: any = forgeState[id];
-    if (id === 'education' && !Array.isArray(val)) val = val?.education || val?.EDUCATION || [];
-    setEditingData(val);
-    setIsForgeModalOpen(true);
-  }
-
-  const handleManualSave = () => {
-    const newState = { ...forgeState };
-    newState[selectedNodeId!] = editingData;
-    setForgeState(newState);
-    setIsForgeModalOpen(false);
-    toast.success("BINARY DATA PERSISTED MANUALLY");
   };
 
   const handleAISectionRefine = async () => {
@@ -268,21 +334,33 @@ export default function ResumeForgePage() {
             body: JSON.stringify({ user_id: context?.id, section: selectedNodeId, instructions: refineInstructions, current_data: forgeState })
         });
         const result = await response.json();
-        setForgeState(result.enhanced_data);
+        updateForgeState(result.enhanced_data);
         setEditingData(result.enhanced_data[selectedNodeId!]);
         toast.success("AI ENHANCEMENT COMPLETE");
     } catch (err) {
         toast.error("AI HANDSHAKE FAILURE");
     } finally {
-        setIsRefining(false);
-        setRefineInstructions("");
+        setIsRefining(false); setRefineInstructions("");
     }
   };
 
+  const handleManualSave = () => {
+    const newState = { ...forgeState };
+    newState[selectedNodeId!] = editingData;
+    updateForgeState(newState);
+    setIsForgeModalOpen(false);
+    toast.success("BINARY DATA PERSISTED MANUALLY");
+  };
+
+  const handleOpenForge = (id: string | null) => {
+    if (!id) return; setSelectedNodeId(id);
+    let val: any = forgeState[id];
+    if (id === 'education' && !Array.isArray(val)) val = val?.education || val?.EDUCATION || [];
+    setEditingData(val); setIsForgeModalOpen(true);
+  }
+
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-    const words = (text || "").split(' ');
-    const lines = [];
-    let currentLine = words[0];
+    const words = (text || "").split(' '); const lines = []; let currentLine = words[0];
     for (let i = 1; i < words.length; i++) {
         const word = words[i];
         if (ctx.measureText(currentLine + " " + word).width < maxWidth) { currentLine += " " + word; } else { lines.push(currentLine); currentLine = word; }
@@ -291,166 +369,92 @@ export default function ResumeForgePage() {
   };
 
   return (
-    <>
-      {/* PERFECTED CSS PRINT PROTOCOL */}
-      <style jsx global>{`
-        @media print {
-            @page { size: A4 portrait; margin: 0; }
-            body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            /* Hide the entire next.js app root to prevent blank pages */
-            #__next, #root { display: none !important; }
-        }
-      `}</style>
-
-      {/* ATS-OPTIMIZED PRINT MIRROR 
-        This is hidden completely on screens, and visible ONLY on print.
-        By avoiding fixed/absolute positioning, the browser properly calculates the bounds.
-      */}
-      <div className="hidden print:block w-[210mm] min-h-[297mm] mx-auto bg-white text-[#0f172a] font-sans pt-[15mm] px-[20mm]">
-         <div className="text-center mb-8 border-b-2 border-slate-100 pb-6">
-            <h1 className="text-3xl font-black tracking-tight uppercase mb-2 text-[#0f172a]">{(forgeState?.full_name || "").toUpperCase()}</h1>
-            <p className="text-[11px] font-bold text-[#64748b] tracking-widest uppercase">
-               {forgeState?.email} &nbsp;|&nbsp; {forgeState?.location?.toUpperCase()}
-            </p>
-         </div>
-         
-         <div className="space-y-8">
-            <section className="break-inside-avoid">
-               <h2 className="text-[10px] font-black tracking-[0.15em] uppercase text-[#2563eb] border-b border-slate-100 pb-2 mb-3">Professional Summary</h2>
-               <p className="italic text-[13px] text-[#334155] leading-relaxed font-medium">"{forgeState?.summary}"</p>
-            </section>
-
-            <section className="break-inside-avoid">
-               <h2 className="text-[10px] font-black tracking-[0.15em] uppercase text-[#2563eb] border-b border-slate-100 pb-2 mb-3">Technical Skills</h2>
-               <div className="flex flex-wrap gap-2">
-                  {(forgeState?.skills || []).map((skill: string, i: number) => (
-                     <div key={i} className="px-3 py-1 bg-slate-50 border border-[#2563eb20] rounded-md text-[10px] font-bold uppercase text-[#0f172a]">{skill}</div>
-                  ))}
-               </div>
-            </section>
-
-            <section>
-               <h2 className="text-[10px] font-black tracking-[0.15em] uppercase text-[#2563eb] border-b border-slate-100 pb-2 mb-4">Professional Experience</h2>
-               <div className="space-y-6">
-                  {(forgeState?.experience || []).map((exp: any, i: number) => (
-                     <div key={i} className="break-inside-avoid">
-                        <div className="flex justify-between items-baseline mb-1">
-                           <h3 className="text-base font-black uppercase text-[#0f172a]">{exp.role}</h3>
-                           <span className="text-[10px] font-bold text-[#94a3b8]">{(exp.duration || exp.period || "Present")?.toUpperCase()}</span>
-                        </div>
-                        <h4 className="text-xs font-bold text-[#2563eb] mb-2 uppercase">{exp.company}</h4>
-                        <p className="text-[13px] text-[#475569] leading-relaxed font-medium">{exp.description}</p>
-                     </div>
-                  ))}
-               </div>
-            </section>
-
-            <section className="break-inside-avoid">
-               <h2 className="text-[10px] font-black tracking-[0.15em] uppercase text-[#2563eb] border-b border-slate-100 pb-2 mb-4">Education</h2>
-               <div className="space-y-4">
-                  {(Array.isArray(forgeState?.education) ? forgeState.education : (forgeState?.education?.education || forgeState?.education?.EDUCATION || [])).map((edu: any, i: number) => (
-                     <div key={i} className="flex justify-between items-start">
-                        <div>
-                           <h3 className="text-sm font-black uppercase text-[#0f172a]">{edu.degree}</h3>
-                           <p className="text-[11px] font-bold text-[#475569] uppercase mt-1">{edu.institution}</p>
-                        </div>
-                        <span className="text-[10px] font-bold text-[#94a3b8] uppercase">{(edu.duration || "").toUpperCase()}</span>
-                     </div>
-                  ))}
-               </div>
-            </section>
-         </div>
-      </div>
-
-      {/* MAIN UI - Hidden during print */}
-      <div className="h-full flex flex-col gap-10 max-w-7xl mx-auto w-full pb-20 print:hidden">
-        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-8">
-          <div className="space-y-3">
-             <div className="flex items-center gap-2 mb-2">
-               <div className="h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <Layout size={14} className="text-primary" />
-               </div>
-               <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">High-Intelligence Forge Hub</span>
-             </div>
-             <h1 className="text-4xl sm:text-6xl font-black tracking-tighter uppercase text-foreground italic flex items-center gap-6 leading-none">
-                A4 <span className="text-primary italic">Forge</span> <PenTool className="h-10 w-10 sm:h-14 sm:w-14 text-primary" />
+    <div className="h-full flex flex-col gap-6 mx-auto w-full pb-10 px-6 sm:px-10">
+        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
+          <div className="space-y-1">
+             <h1 className="text-4xl sm:text-5xl font-black tracking-tighter uppercase text-foreground italic flex items-center gap-4 leading-none">
+                RESUME <span className="text-primary italic">FORGE</span> <PenTool className="h-8 w-8 sm:h-10 sm:w-10 text-primary" />
              </h1>
+             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">High-Intelligence Workflow</p>
           </div>
           
           <div className="flex items-center gap-3">
-             <Button onClick={() => { localStorage.removeItem('RESUME_FORGE_STATE'); window.location.reload(); }} variant="outline" className="h-14 px-6 rounded-2xl border-border bg-muted/40 font-black text-[11px] uppercase tracking-widest gap-2 shadow-sm">
-                <RefreshCcw size={16} /> RESET
-             </Button>
-             <div className="flex items-center gap-2 p-1.5 bg-muted/20 border border-border/40 rounded-2xl">
-                <Button onClick={handleDownloadPNG} variant="ghost" className="h-11 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest gap-2 text-muted-foreground hover:text-primary transition-all">
-                   PNG
+             <div className="flex items-center gap-1 p-1 bg-muted/20 border border-border/40 rounded-xl mr-2">
+                <Button onClick={handleUndo} disabled={historyIndex <= 0} variant="ghost" className="h-9 w-9 p-0 rounded-lg text-muted-foreground hover:text-primary transition-all shadow-none" title="Undo (Ctrl+Z)">
+                   <Undo2 size={16} />
                 </Button>
-                <Button onClick={handleDownloadPDF} className="h-11 px-6 rounded-xl bg-primary text-primary-foreground font-black tracking-widest text-[11px] uppercase gap-2 shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
-                   <FileDown size={16} /> DOWNLOAD PDF
+                <Button onClick={handleRedo} disabled={historyIndex >= history.length - 1} variant="ghost" className="h-9 w-9 p-0 rounded-lg text-muted-foreground hover:text-primary transition-all shadow-none" title="Redo (Ctrl+Y)">
+                   <Redo2 size={16} />
+                </Button>
+             </div>
+
+             <Button onClick={() => { localStorage.removeItem('RESUME_FORGE_STATE'); window.location.reload(); }} variant="outline" className="h-11 px-4 rounded-xl border-border bg-muted/40 font-black text-[10px] uppercase tracking-widest gap-2 shadow-sm hover:bg-destructive hover:text-destructive-foreground transition-all">
+                <RefreshCcw size={14} /> RESET
+             </Button>
+             <div className="flex items-center gap-2 p-1 bg-muted/20 border border-border/40 rounded-xl">
+                <Button onClick={handleDownloadPNG} variant="ghost" className="h-9 px-3 rounded-lg font-black text-[9px] uppercase tracking-widest text-muted-foreground hover:text-primary transition-all">PNG</Button>
+                <Button onClick={handleDownloadPDF} className="h-9 px-4 rounded-lg bg-primary text-primary-foreground font-black tracking-widest text-[10px] uppercase gap-2 shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
+                   <FileDown size={14} /> DOWNLOAD PDF
                 </Button>
              </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 h-full">
-          <div className="lg:col-span-4 space-y-8">
-            <Card className="bg-card/40 border-2 border-border/40 backdrop-blur-xl rounded-[2.5rem] overflow-hidden shadow-2xl relative">
-               <CardHeader className="p-8 border-b border-border/20 bg-muted/20">
-                  <CardTitle className="text-[11px] font-black flex items-center gap-3 tracking-[0.2em] uppercase">
-                    <PenTool className="h-4 w-4 text-primary" /> Node Terminal
-                  </CardTitle>
-               </CardHeader>
-               <CardContent className="p-8 space-y-3">
-                  <TargetItem label="SUMMARY" icon={<Zap size={14} />} onClick={() => handleOpenForge('summary')} />
-                  <TargetItem label="EXPERIENCE" icon={<Briefcase size={14} />} onClick={() => handleOpenForge('experience')} />
-                  <TargetItem label="SKILLS" icon={<Layers size={14} />} onClick={() => handleOpenForge('skills')} />
-                  <TargetItem label="EDUCATION" icon={<GraduationCap size={14} />} onClick={() => handleOpenForge('education')} />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
+          <div className="lg:col-span-3 space-y-6">
+            <Card className="bg-card/40 border border-border/40 backdrop-blur-xl rounded-[2rem] overflow-hidden shadow-xl">
+               <CardHeader className="p-5 border-b border-border/20 bg-muted/20"><CardTitle className="text-[10px] font-black flex items-center gap-2 tracking-[0.2em] uppercase"><PenTool className="h-3.5 w-3.5 text-primary" /> Data Nodes</CardTitle></CardHeader>
+               <CardContent className="p-5 space-y-2">
+                  <TargetItem label="SUMMARY" icon={<Zap size={12} />} onClick={() => handleOpenForge('summary')} />
+                  <TargetItem label="EXPERIENCE" icon={<Briefcase size={12} />} onClick={() => handleOpenForge('experience')} />
+                  <TargetItem label="SKILLS" icon={<Layers size={12} />} onClick={() => handleOpenForge('skills')} />
+                  <TargetItem label="EDUCATION" icon={<GraduationCap size={12} />} onClick={() => handleOpenForge('education')} />
                </CardContent>
             </Card>
-            <Card className="bg-card/40 border-2 border-border/40 backdrop-blur-xl rounded-[2.5rem] overflow-hidden shadow-2xl relative border-t-2 border-primary/20">
-               <CardContent className="p-8 space-y-4">
-                  <div className="flex items-center gap-3 mb-2">
-                     <div className="h-10 w-10 border border-primary/30 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                        <Cpu size={20} />
-                     </div>
-                     <div>
-                        <h3 className="text-xs font-black uppercase tracking-tight italic text-primary">TEXT-PDF SYNC</h3>
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">ATS MISSION READY</p>
-                     </div>
+            
+            <Card className="bg-card/40 border border-border/40 backdrop-blur-xl rounded-[2rem] overflow-hidden shadow-xl">
+               <CardHeader className="p-5 border-b border-border/20 bg-muted/20"><CardTitle className="text-[10px] font-black flex items-center gap-2 tracking-[0.2em] uppercase"><Palette className="h-3.5 w-3.5 text-primary" /> Visual Core</CardTitle></CardHeader>
+               <CardContent className="p-6 space-y-6">
+                  <div className="grid grid-cols-2 gap-2">
+                     {(['INDUSTRIAL', 'CLASSIC', 'MODERN', 'STEALTH', 'CREATIVE', 'EXECUTIVE'] as const).map(t => (
+                        <Button key={t} onClick={() => setSelectedTemplate(t)} variant={selectedTemplate === t ? 'default' : 'outline'} className={cn("h-10 rounded-xl font-black text-[8px] uppercase tracking-widest transition-all", selectedTemplate === t ? "bg-primary text-primary-foreground shadow-md" : "text-muted-foreground border-border/40 hover:border-primary/40")}>{t}</Button>
+                     ))}
                   </div>
-                  <p className="text-[10px] text-muted-foreground leading-relaxed uppercase font-bold text-center p-4 bg-muted/20 rounded-2xl border border-border/40 shadow-inner">
-                     Your PDF is exported as searchable text binary, ensuring 100% hardware compatibility with top-tier recruitment scouts.
-                  </p>
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between"><label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Maximize size={10} className="text-primary" /> Page Margin</label><span className="text-[10px] font-bold text-primary tabular-nums">{pageMargin}PX</span></div>
+                     <Slider value={[pageMargin]} onValueChange={(v) => setPageMargin(v[0])} min={20} max={100} step={1} className="my-2" />
+                  </div>
+                  <div className="space-y-4">
+                     <div className="flex items-center justify-between"><label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><StretchVertical size={10} className="text-primary" /> Component Gap</label><span className="text-[10px] font-bold text-primary tabular-nums">{componentGap}PX</span></div>
+                     <Slider value={[componentGap]} onValueChange={(v) => setComponentGap(v[0])} min={10} max={80} step={1} className="my-2" />
+                  </div>
+                  <div className="pt-2 flex items-center gap-2 opacity-40 hover:opacity-100 transition-all cursor-default">
+                     <Keyboard size={12} className="text-primary" />
+                     <span className="text-[8px] font-black uppercase tracking-widest">Ctrl+Z: Undo | Ctrl+Y: Redo</span>
+                  </div>
                </CardContent>
             </Card>
           </div>
 
-          <div className="lg:col-span-8 flex flex-col gap-6">
-             <Card className="bg-card/40 border-2 border-border/40 backdrop-blur-xl rounded-[3rem] overflow-hidden shadow-2xl relative flex-1 flex flex-col transition-all">
-                <CardHeader className="p-10 border-b border-border/20 bg-muted/20 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[14px] font-black flex items-center gap-4 tracking-[0.3em] uppercase italic">
-                    <Eye className="h-5 w-5 text-primary" /> Visual Document Preview
-                  </CardTitle>
-                  <div className="flex items-center gap-4">
-                     <Badge variant="outline" className="text-[10px] font-black border-primary/30 text-primary uppercase bg-primary/5">ONE-PAGE OPTOR</Badge>
-                  </div>
+          <div className="lg:col-span-9 flex flex-col">
+             <Card className="bg-card/40 border border-border/40 backdrop-blur-xl rounded-[2.5rem] overflow-hidden shadow-2xl relative flex-1 flex flex-col">
+                <CardHeader className="p-6 border-b border-border/20 bg-muted/20 flex flex-row items-center justify-between">
+                  <CardTitle className="text-[12px] font-black flex items-center gap-3 tracking-[0.2em] uppercase italic"><Eye className="h-4 w-4 text-primary" /> A4 Forge Render</CardTitle>
+                  <div className="flex items-center gap-2"><Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary uppercase bg-primary/5">SELECTABLE TEXT READY</Badge></div>
                 </CardHeader>
-                <div className="flex-1 p-12 bg-muted/30 dark:bg-[#09090b]/40 relative overflow-y-auto no-scrollbar flex justify-center items-start">
-                   <div className="relative shadow-[0_20px_120px_rgba(37,99,235,0.1)] rounded-sm bg-white overflow-hidden group cursor-text">
-                      <canvas ref={canvasRef} onClick={handleCanvasClick} className="w-[600px] h-auto" style={{ aspectRatio: `${A4_WIDTH} / ${A4_HEIGHT}` }} />
+                <div className="flex-1 p-8 bg-muted/20 dark:bg-[#09090b]/40 relative overflow-y-auto no-scrollbar flex justify-center items-start">
+                   <div className="relative shadow-2xl rounded-sm bg-white overflow-hidden group">
+                      <canvas ref={canvasRef} onClick={handleCanvasClick} className="w-[600px] h-auto cursor-crosshair transition-all" style={{ aspectRatio: `${A4_WIDTH} / ${A4_HEIGHT}` }} />
+                      <div className="absolute inset-0 border-4 border-primary/0 group-hover:border-primary/10 pointer-events-none transition-all" />
                    </div>
                 </div>
              </Card>
           </div>
         </div>
 
-        {/* Unified Forge Dialog */}
         <Dialog open={isForgeModalOpen} onOpenChange={setIsForgeModalOpen}>
            <DialogContent className="bg-card/95 backdrop-blur-3xl border-2 border-primary/20 sm:max-w-[650px] rounded-[3rem] shadow-2xl p-0 overflow-hidden">
-              <div className="bg-primary/5 p-8 border-b border-border/20 space-y-1">
-                 <DialogTitle className="text-2xl font-black uppercase tracking-tighter italic">Forge Node: <span className="text-primary">{selectedNodeId?.toUpperCase()}</span></DialogTitle>
-                 <DialogDescription className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest italic">Manual precision & AI re-forge terminal.</DialogDescription>
-              </div>
+              <div className="bg-primary/5 p-8 border-b border-border/20 space-y-1"><DialogTitle className="text-2xl font-black uppercase tracking-tighter italic">Forge Node: <span className="text-primary">{selectedNodeId?.toUpperCase()}</span></DialogTitle><DialogDescription className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest italic">Manual precision & AI re-forge terminal.</DialogDescription></div>
               <Tabs defaultValue="manual" className="w-full">
                  <div className="px-8 pt-6"><TabsList className="grid w-full grid-cols-2 rounded-2xl bg-muted/40 h-12 p-1">
                     <TabsTrigger value="manual" className="rounded-xl font-black text-[10px] uppercase tracking-widest gap-2 transition-all"><PenTool size={14} /> Manual Edit</TabsTrigger>
@@ -482,25 +486,168 @@ export default function ResumeForgePage() {
                     </div></TabsContent>
                  </ScrollArea>
               </Tabs>
-              <div className="p-8 border-t border-border/20 bg-muted/10 flex gap-4">
-                  <Button variant="ghost" onClick={()=>setIsForgeModalOpen(false)} className="flex-1 h-14 rounded-2xl text-[11px] font-black uppercase tracking-widest">Abort</Button>
-                  <Button onClick={handleManualSave} className="flex-[2] h-14 rounded-2xl bg-primary text-primary-foreground font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-primary/20">PERSIST CHANGES</Button>
-              </div>
+              <div className="p-8 border-t border-border/20 bg-muted/10 flex gap-4"><Button variant="ghost" onClick={()=>setIsForgeModalOpen(false)} className="flex-1 h-14 rounded-2xl text-[11px] font-black uppercase tracking-widest">Abort</Button><Button onClick={handleManualSave} className="flex-[2] h-14 rounded-2xl bg-primary text-primary-foreground font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-primary/20">PERSIST CHANGES</Button></div>
            </DialogContent>
         </Dialog>
-      </div>
-    </>
+    </div>
   );
 }
 
 function TargetItem({ label, icon, onClick }: any) {
   return (
-    <Button onClick={onClick} variant="outline" className="h-16 rounded-2xl border-border/40 bg-muted/20 hover:bg-primary/5 hover:border-primary/40 flex items-center justify-between px-8 group transition-all">
-       <div className="flex items-center gap-4">
-          <div className="h-10 w-10 rounded-xl bg-background border flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:border-primary/20 transition-all">{icon}</div>
-          <span className="text-[11px] font-black tracking-widest uppercase">{label}</span>
+    <Button onClick={onClick} variant="outline" className="h-12 rounded-xl border-border/40 bg-muted/20 hover:bg-primary/5 hover:border-primary/40 flex items-center justify-between px-5 group transition-all">
+       <div className="flex items-center gap-3">
+          <div className="h-7 w-7 rounded-lg bg-background border flex items-center justify-center text-muted-foreground group-hover:text-primary transition-all">{icon}</div>
+          <span className="text-[10px] font-black tracking-widest uppercase">{label}</span>
        </div>
-       <ChevronRight size={16} className="text-muted-foreground group-hover:text-primary" />
+       <ChevronRight size={14} className="text-muted-foreground group-hover:text-primary" />
     </Button>
   );
 }
+
+const SectionIDMapping = [
+    { id: 'summary', startY: 0, endY: 0 },
+    { id: 'skills', startY: 0, endY: 0 },
+    { id: 'experience', startY: 0, endY: 0 },
+    { id: 'education', startY: 0, endY: 0 }
+];
+
+const ResumePDF = ({ data, template, pageMargin, componentGap }: { data: any, template: TemplateID, pageMargin: number, componentGap: number }) => {
+  const s = THEMES[template];
+  const eduList = Array.isArray(data.education) ? data.education : (data.education?.education || data.education?.EDUCATION || []);
+  const isClassic = template === 'CLASSIC';
+  const dp = { ...s.page, padding: pageMargin };
+  const ds = { marginTop: componentGap };
+
+  return (
+    <Document title={`${String(data.full_name || "RESUME")?.toUpperCase()}`}>
+      <Page size="A4" style={dp}>
+        <View style={s.header}>
+          <Text style={s.name}>{String(data.full_name || "")?.toUpperCase()}</Text>
+          <Text style={s.contact}>{String(data.email || "")} {isClassic ? '•' : '|'} {String(data.location || "")?.toUpperCase()}</Text>
+        </View>
+        <View style={ds}><Text style={s.sectionHeader}>Professional Summary</Text><Text style={s.summary}>{String(data.summary || "")}</Text></View>
+        <View style={ds}><Text style={s.sectionHeader}>Technical Skills</Text><View style={s.skillContainer}>{(data.skills || []).map((skill: any, i: number) => (<Text key={i} style={s.skillBadge}>{isClassic && i > 0 ? `• ${String(skill).toUpperCase()}` : String(skill).toUpperCase()}</Text>))}</View></View>
+        <View style={ds}><Text style={s.sectionHeader}>Professional Experience</Text>{(data.experience || []).map((exp: any, i: number) => (<View key={i} style={s.expItem}><View style={s.expHeader}><Text style={s.role}>{String(exp.role || "")?.toUpperCase()}</Text><Text style={s.duration}>{String(exp.duration || exp.period || "Present")?.toUpperCase()}</Text></View><Text style={s.company}>{String(exp.company || "")?.toUpperCase()}</Text><Text style={s.description}>{String(exp.description || "")}</Text></View>))}</View>
+        {eduList.length > 0 && (<View style={ds}><Text style={s.sectionHeader}>Education</Text>{eduList.map((edu: any, i: number) => (<View key={i} style={s.eduItem}><View style={isClassic ? s.expHeader : {}}><Text style={s.degree}>{String(edu.degree || "")?.toUpperCase()}</Text>{isClassic && <Text style={s.duration}>{String(edu.duration || "")?.toUpperCase()}</Text>}</View><Text style={s.institution}>{String(edu.institution || "")?.toUpperCase()}</Text>{!isClassic && <Text style={s.duration}>{String(edu.duration || "")?.toUpperCase()}</Text>}</View>))}</View>)}
+      </Page>
+    </Document>
+  );
+};
+
+const THEMES = {
+  INDUSTRIAL: StyleSheet.create({
+    page: { padding: 60, fontFamily: 'Helvetica', fontSize: 10.5, color: '#1a1a1a', lineHeight: 1.4 },
+    header: { textAlign: 'center' },
+    name: { fontSize: 26, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
+    contact: { fontSize: 9, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 },
+    sectionHeader: { fontSize: 8.5, fontWeight: 'bold', textTransform: 'uppercase', color: '#2563eb', marginBottom: 10, paddingBottom: 3, letterSpacing: 1 },
+    summary: { fontSize: 10.5, color: '#334155', lineHeight: 1.5 },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    skillBadge: { fontSize: 7.5, padding: '3 7', backgroundColor: '#f8fafc', border: 0.5, borderColor: '#e2e8f0', borderRadius: 4, color: '#475569' },
+    expItem: { marginBottom: 15 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 },
+    role: { fontSize: 11.5, fontWeight: 'bold', textTransform: 'uppercase', color: '#0f172a' },
+    duration: { fontSize: 8, color: '#94a3b8', fontWeight: 'bold' },
+    company: { fontSize: 9.5, color: '#2563eb', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 5 },
+    description: { fontSize: 9.5, color: '#4b5563', lineHeight: 1.5 },
+    eduItem: { marginBottom: 10 }, 
+    degree: { fontSize: 10.5, fontWeight: 'bold', textTransform: 'uppercase', color: '#0f172a', marginBottom: 4 },
+    institution: { fontSize: 9, color: '#2563eb', fontWeight: 'bold', textTransform: 'uppercase' }
+  }),
+  CLASSIC: StyleSheet.create({
+    page: { padding: 50, fontFamily: 'Times-Roman', fontSize: 11, color: '#000', lineHeight: 1.3 },
+    header: { textAlign: 'center' },
+    name: { fontSize: 28, fontWeight: 'bold', marginBottom: 10 },
+    contact: { fontSize: 10, fontStyle: 'italic', color: '#333' },
+    sectionHeader: { fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', color: '#000', marginBottom: 10 },
+    summary: { fontSize: 11, color: '#111' },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    skillBadge: { fontSize: 9, color: '#000' }, 
+    expItem: { marginBottom: 12 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 },
+    role: { fontSize: 13, fontWeight: 'bold' },
+    duration: { fontSize: 10, color: '#444' },
+    company: { fontSize: 11, fontStyle: 'italic', marginBottom: 4 },
+    description: { fontSize: 10.5, color: '#222' },
+    eduItem: { paddingBottom: 8 },
+    degree: { fontSize: 12, fontWeight: 'bold', marginBottom: 3 },
+    institution: { fontSize: 10, color: '#444' }
+  }),
+  MODERN: StyleSheet.create({
+    page: { padding: 60, fontFamily: 'Helvetica', fontSize: 10.5, color: '#1e293b', lineHeight: 1.6 },
+    header: { textAlign: 'left', borderLeft: 4, borderLeftColor: '#6366f1', paddingLeft: 20 },
+    name: { fontSize: 32, fontWeight: 'bold', color: '#1e1b4b', marginBottom: 10 },
+    contact: { fontSize: 9.5, color: '#6366f1', fontWeight: 'bold' },
+    sectionHeader: { fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', color: '#6366f1', backgroundColor: '#f5f3ff', padding: '4 10', borderRadius: 6, marginBottom: 15, letterSpacing: 1.2 },
+    summary: { fontSize: 11, color: '#334155', borderLeft: 2, borderLeftColor: '#e2e8f0', paddingLeft: 15, fontStyle: 'italic' },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    skillBadge: { fontSize: 8, padding: '4 10', backgroundColor: '#6366f1', color: '#fff', borderRadius: 20, fontWeight: 'bold' },
+    expItem: { marginBottom: 20, borderLeft: 1, borderLeftColor: '#f1f5f9', paddingLeft: 20 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 },
+    role: { fontSize: 12.5, fontWeight: 'bold', color: '#1e1b4b' },
+    duration: { fontSize: 9, color: '#94a3b8', backgroundColor: '#f8fafc', padding: '2 8', borderRadius: 4 },
+    company: { fontSize: 10, color: '#6366f1', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 6 },
+    description: { fontSize: 10, color: '#475569' },
+    eduItem: { marginBottom: 15, paddingLeft: 20 },
+    degree: { fontSize: 12, fontWeight: 'bold', color: '#1e1b4b', marginBottom: 4 },
+    institution: { fontSize: 10, color: '#6366f1', fontWeight: 'bold' }
+  }),
+  STEALTH: StyleSheet.create({
+    page: { padding: 60, fontFamily: 'Helvetica', fontSize: 10, color: '#334155', lineHeight: 1.4 },
+    header: { textAlign: 'center' },
+    name: { fontSize: 30, fontWeight: 'bold', letterSpacing: 2, color: '#0f172a', marginBottom: 10 },
+    contact: { fontSize: 9, color: '#94a3b8', marginTop: 5 },
+    sectionHeader: { fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase', color: '#0f172a', marginBottom: 15, paddingTop: 5 },
+    summary: { fontSize: 10.5, color: '#475569' },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+    skillBadge: { fontSize: 8, padding: '3 8', backgroundColor: '#f1f5f9', color: '#0f172a', borderRadius: 2 },
+    expItem: { marginBottom: 15 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
+    role: { fontSize: 12, fontWeight: 'bold' },
+    duration: { fontSize: 9, color: '#94a3b8' },
+    company: { fontSize: 10, color: '#334155', fontWeight: 'bold', marginBottom: 6 },
+    description: { fontSize: 9.5 },
+    eduItem: { marginBottom: 10 },
+    degree: { fontSize: 11, fontWeight: 'bold', marginBottom: 3 },
+    institution: { fontSize: 10, color: '#64748b', fontWeight: 'bold' }
+  }),
+  CREATIVE: StyleSheet.create({
+    page: { padding: 60, fontFamily: 'Helvetica', fontSize: 10.5, color: '#312e81', lineHeight: 1.5 },
+    header: { textAlign: 'left', borderLeft: 8, borderLeftColor: '#ec4899', paddingLeft: 20 },
+    name: { fontSize: 34, fontWeight: 'bold', color: '#be185d', marginBottom: 10 },
+    contact: { fontSize: 10, color: '#fb7185', fontWeight: 'bold' },
+    sectionHeader: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', color: '#ec4899', marginBottom: 12, letterSpacing: 2 },
+    summary: { fontSize: 11, fontStyle: 'italic' },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    skillBadge: { fontSize: 8, padding: '4 10', backgroundColor: '#fff1f2', color: '#be185d', borderRadius: 50, border: 1, borderColor: '#fecdd3' },
+    expItem: { marginBottom: 15 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+    role: { fontSize: 13, fontWeight: 'bold', color: '#831843' },
+    duration: { fontSize: 8.5, color: '#fb7185' },
+    company: { fontSize: 11, fontWeight: 'bold', color: '#ec4899', marginBottom: 5 },
+    description: { fontSize: 10, color: '#4c0519' },
+    eduItem: { marginBottom: 15 },
+    degree: { fontSize: 12, fontWeight: 'bold', color: '#831843', marginBottom: 4 },
+    institution: { fontSize: 10, color: '#fb7185', fontWeight: 'bold' }
+  }),
+  EXECUTIVE: StyleSheet.create({
+    page: { padding: 60, fontFamily: 'Helvetica', fontSize: 10, color: '#064e3b', lineHeight: 1.4 },
+    header: { textAlign: 'center', backgroundColor: '#ecfdf5', padding: 25, borderRadius: 8 },
+    name: { fontSize: 28, fontWeight: 'bold', color: '#064e3b', marginBottom: 10 },
+    contact: { fontSize: 9, color: '#10b981', marginTop: 8, letterSpacing: 1 },
+    sectionHeader: { fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', color: '#fff', backgroundColor: '#059669', padding: '5 15', marginBottom: 15 },
+    summary: { fontSize: 11, borderBottom: 1, borderBottomColor: '#d1fae5', paddingBottom: 15 },
+    skillContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    skillBadge: { fontSize: 9, fontWeight: 'bold' },
+    expItem: { marginBottom: 18 },
+    expHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+    role: { fontSize: 13, fontWeight: 'bold' },
+    duration: { fontSize: 10, color: '#10b981' },
+    company: { fontSize: 11, fontStyle: 'italic', color: '#059669', marginBottom: 8 },
+    description: { fontSize: 10 },
+    eduItem: { marginBottom: 10 },
+    degree: { fontSize: 12, fontWeight: 'bold', marginBottom: 4 },
+    institution: { fontSize: 10, color: '#10b981', fontWeight: 'bold' }
+  })
+};

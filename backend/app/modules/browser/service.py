@@ -142,7 +142,9 @@ class BrowserService:
             # but we return false to the UI which handles the 500 error toast
             return False
         finally:
-            if browser: await browser.close()
+            # IMPORTANT: We DO NOT call browser.close() here because that would kill the
+            # actual Chrome process on the user's desktop. We only want to stop the 
+            # Playwright engine/driver and release the debugger link.
             if pw: await pw.stop()
 
     async def run_automation_locally(self, task_url: str):
@@ -155,8 +157,8 @@ class BrowserService:
             await page.goto(task_url)
             print(f"✅ Controlling local browser: {await page.title()}")
         finally:
-            await browser.close()
-            await pw.stop()
+            # Disconnect Playwright driver but keep the local Chrome running
+            if pw: await pw.stop()
 
     async def navigate_locally(self, task_url: str):
         """

@@ -39,33 +39,27 @@ async function createWindow() {
   });
 }
 
+function getChromePath() {
+  if (process.platform === 'win32') {
+    const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+    if (fs.existsSync(chromePath)) return chromePath;
+    if (fs.existsSync(chromePathX86)) return chromePathX86;
+    return 'chrome.exe'; // Fallback to PATH
+  } else if (process.platform === 'darwin') {
+    const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    return fs.existsSync(chromePath) ? chromePath : 'google-chrome';
+  } else {
+    return 'google-chrome'; // Default for Linux
+  }
+}
+
 // IPC Handlers
 ipcMain.handle('launch-browser', async (event, { userId, url, platform }) => {
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
   
-  let chromeExe = 'chrome';
-  let chromeFound = false;
-
-  if (process.platform === 'win32') {
-    const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-    const chromePathX86 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-    if (fs.existsSync(chromePath)) {
-      chromeExe = chromePath;
-      chromeFound = true;
-    } else if (fs.existsSync(chromePathX86)) {
-      chromeExe = chromePathX86;
-      chromeFound = true;
-    } else {
-      chromeExe = 'chrome.exe'; // Hope it's in PATH
-    }
-  } else if (process.platform === 'linux') {
-    chromeExe = 'google-chrome';
-    chromeFound = true; // Assume standard install on linux for now
-  } else if (process.platform === 'darwin') {
-    chromeExe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    chromeFound = fs.existsSync(chromeExe);
-  }
+  const chromeExe = getChromePath();
 
   console.log(`🚀 Triggering Browser Launch: [${platform}] for ${userId}`);
   console.log(`📍 Profile: ${profileDir}`);
@@ -107,19 +101,22 @@ ipcMain.handle('launch-chrome-debug', async (event, { userId }) => {
   const profileDir = path.join(app.getPath('userData'), 'drafted.job', userId.replace(/[@.]/g, '_'));
   if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
   
-  let chromeExe = 'chrome';
-  if (process.platform === 'win32') {
-    chromeExe = 'chrome.exe';
-  } else if (process.platform === 'linux') {
-    chromeExe = 'google-chrome';
-  } else if (process.platform === 'darwin') {
-    chromeExe = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  }
-
+  const chromeExe = getChromePath();
   const flags = [`--user-data-dir=${profileDir}`, '--remote-debugging-port=9223', '--remote-debugging-address=0.0.0.0', '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check', 'about:blank'];
-  const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
-  child.unref();
-  return { success: true, profile: profileDir };
+  
+  try {
+    const child = spawn(chromeExe, flags, { detached: true, stdio: 'ignore', shell: false });
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        child.unref();
+        resolve({ success: true, profile: profileDir });
+      }, 500);
+    });
+  } catch (err) {
+    console.error(`❌ Auto-launch Failure: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('open-external-browser', async (event, url) => {

@@ -10,7 +10,8 @@ import {
    FileText,
    Trash2,
    Loader2,
-   ClipboardList
+   ClipboardList,
+   Network
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -162,7 +163,7 @@ export default function PositionSpecifications({
                                  dispatch(updateJobStatus({ jobId: selectedJob.id, status: 'applied' }));
                               }
                            }}
-                           className="col-span-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest text-[9px] rounded-lg shadow-lg shadow-primary/10 flex items-center justify-center gap-2 transition-all"
+                           className="col-span-6 h-10 bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest text-[9px] rounded-lg shadow-lg shadow-primary/10 flex items-center justify-center gap-2 transition-all"
                         >
                            APPLY  <ChevronRight size={14} />
                         </Button>
@@ -179,6 +180,18 @@ export default function PositionSpecifications({
                                  <Loader2 className="animate-spin text-primary" size={14} />
                               </div>
                            )}
+                        </Button>
+
+                        <Button
+                           onClick={() => {
+                              if (!selectedJob?.company) return;
+                              window.location.href = `/connections?company=${encodeURIComponent(selectedJob.company)}`;
+                           }}
+                           variant="outline"
+                           className="col-span-2 h-10 border border-border/40 font-black uppercase tracking-widest text-[8px] rounded-lg hover:border-primary/20 hover:text-primary transition-all flex flex-col items-center justify-center gap-0.5"
+                        >
+                           <Network size={12} />
+                           NETWORKING
                         </Button>
 
                         <Button

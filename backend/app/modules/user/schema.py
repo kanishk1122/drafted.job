@@ -34,3 +34,5 @@ class UserUpdate(BaseModel):
     foundit_active: Optional[bool] = None
     glassdoor_active: Optional[bool] = None
     ambitionbox_active: Optional[bool] = None
+    google_email: Optional[str] = None
+    google_active: Optional[bool] = None

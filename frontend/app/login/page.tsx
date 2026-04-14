@@ -65,6 +65,7 @@ export default function LoginPage() {
       }
 
       dispatch(loginSuccess({ 
+        id: data.id,
         email: data.email, 
         full_name: data.full_name 
       }));

@@ -74,6 +74,15 @@ export const platformTargets: SearchChannel[] = [
     color: "orange", 
     url: "https://www.ambitionbox.com/", 
   },
+  { 
+    id: 7, 
+    name: "Google Jobs", 
+    key: "google",
+    logo: "https://www.google.com/s2/favicons?domain=google.com&sz=128", 
+    status: "Global Index", 
+    color: "blue", 
+    url: "https://www.google.com/search?q=jobs+near+me&ibp=htl;jobs", 
+  },
 ];
 
 export function PlatformListItem({ platform }: { platform: SearchChannel }) {

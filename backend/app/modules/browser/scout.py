@@ -105,169 +105,18 @@ PLATFORM_SEARCH_CONFIG = {
         "company_selector": "p.companyLogo",
         "location_selector": ".job-info-list",
     },
+    "google": {
+        "search_url": lambda q, loc, page=1: (
+            f"https://www.google.com/search?q={urllib.parse.quote_plus(q)}+jobs+in+{urllib.parse.quote_plus(loc)}"
+            f"&ibp=htl;jobs"
+        ),
+        "job_card_selectors": ["li.gdEP7b", "div.iS779e", "div[role='treeitem']"],
+        "wait_selector": "li.gdEP7b, div.iS779e, div[role='treeitem']",
+        "title_selector": "div.BjS79b, div.vNEEBe, .vNEEBe",
+        "company_selector": "div.vNHEBe, div.vNHEBe",
+        "location_selector": "div.QY9Zdb, .QY9Zdb",
+    },
 }
-
-
-async def _extract_card_data_linkedin(card) -> dict:
-    try:
-        data = await card.evaluate("""(el) => {
-            // Multiple title selectors to handle different LinkedIn experiments
-            const titleEl = el.querySelector(
-                'a.job-card-list__title--link > span[aria-hidden="true"], ' +
-                'a.job-card-list__title > span[aria-hidden="true"], ' +
-                'h3.base-search-card__title, ' +
-                '.full-width.artdeco-entity-lockup__title, ' +
-                'a.job-card-list__title--link'
-            );
-            
-            let title = titleEl ? titleEl.innerText.trim() : '';
-            if (title) {
-                // Deduplicate repetitive titles like "Software Engineer Software Engineer"
-                const words = title.split(/\\s+/);
-                if (words.length >= 2 && words.length % 2 === 0) {
-                    const half = words.length / 2;
-                    if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
-                        title = words.slice(0, half).join(' ');
-                    }
-                }
-            }
-
-            const linkEl = el.querySelector('a.job-card-list__title--link, a.job-card-list__title, h3.base-search-card__title a, .base-card__full-link');
-            const href = linkEl ? linkEl.getAttribute('href') : '';
-
-            const companyEl = el.querySelector(
-                '.job-card-container__primary-description, ' +
-                '.job-card-container__company-name, ' +
-                '.base-search-card__subtitle, ' +
-                '.artdeco-entity-lockup__subtitle'
-            );
-            const company = companyEl ? companyEl.innerText.replace(/\\n/g, '').trim() : '';
-
-            const locationEl = el.querySelector(
-                '.job-card-container__metadata-item, ' +
-                '.job-card-container__metadata-wrapper, ' +
-                '.job-search-card__location, ' +
-                '.artdeco-entity-lockup__metadata, ' +
-                '.job-card-container__company-name + span'
-            );
-            let location = locationEl ? locationEl.innerText.trim() : '';
-            
-            // TACTICAL: Clean up "Location (Remote)" or "Location (On-site)"
-            if (location.includes('\\n')) location = location.split('\\n')[0].trim();
-
-            const jobId = el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id') || '';
-
-            return { title, href, company, location, jobId };
-        }""")
-        return data
-    except Exception:
-        return {"title": "", "href": "", "company": "", "location": "", "jobId": ""}
-
-
-async def _extract_card_data_generic(card, config, location_default: str) -> dict:
-    try:
-        title_el = None
-        for tsel in (config.get("title_selector") or "").split(", "):
-            title_el = await card.query_selector(tsel.strip())
-            if title_el: break
-        
-        company_el = None
-        for csel in (config.get("company_selector") or "").split(", "):
-            company_el = await card.query_selector(csel.strip())
-            if company_el: break
-
-        location_el = None
-        for lsel in (config.get("location_selector") or "").split(", "):
-            location_el = await card.query_selector(lsel.strip())
-            if location_el: break
-
-        title = (await title_el.inner_text() if title_el else "").strip()
-        company = (await company_el.inner_text() if company_el else "").strip()
-        loc = (await location_el.inner_text() if location_el else location_default).strip()
-        link = await title_el.get_attribute("href") if title_el else ""
-
-        # TACTICAL: Extract secondary skills/tags for better AI matching
-        tags = []
-        if config.get("tags_selector"):
-            tag_elements = await card.query_selector_all(config["tags_selector"])
-            for t_el in tag_elements:
-                tags.append((await t_el.inner_text()).strip())
-        
-        # EXTRACT: Job snippet/description from card if available
-        desc_snippet = ""
-        if config.get("description_selector"):
-            desc_el = await card.query_selector(config["description_selector"])
-            if desc_el:
-                desc_snippet = (await desc_el.inner_text()).strip()
-
-        # EXTRACT: Freshness Signal (Temporal context)
-        posted_at = ""
-        if config.get("posted_selector"):
-            posted_el = await card.query_selector(config["posted_selector"])
-            if posted_el:
-                posted_at = (await posted_el.inner_text()).strip()
-
-        return {
-            "title": title, 
-            "company": company, 
-            "location": loc, 
-            "href": link,
-            "tags": ", ".join(tags) if tags else "",
-            "description": desc_snippet,
-            "posted_at": posted_at
-        }
-    except Exception:
-        return {"title": "", "company": "", "location": "", "href": "", "posted_at": ""}
-
-
-async def _get_job_detail_via_panel(page, card, job_id: str, timeout: int = 8000) -> dict:
-    try:
-        await card.click(force=True)
-        # LinkedIn and Foundit JD side-panels
-        await page.wait_for_selector(".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container", timeout=timeout)
-        await asyncio.sleep(1.2)
-        
-        intel = await page.evaluate("""() => {
-            // 1. Description Drill
-            const panel = document.querySelector('#job-details') || 
-                          document.querySelector('.jobs-description-content__text') ||
-                          document.querySelector('.jobs-description__content') || 
-                          document.querySelector('.jobs-box__html-content') || 
-                          document.querySelector('.jobDescriptionNew') || 
-                          document.querySelector('#jdSection') || 
-                          document.querySelector('.job-view-layout');
-            const description = panel ? panel.innerText.trim() : '';
-
-            // 2. Mission-Critical Meta Ingest (LinkedIn Specific)
-            const metaContainer = document.querySelector('.job-details-jobs-unified-top-card__tertiary-description-container') ||
-                                 document.querySelector('.job-details-jobs-unified-top-card__primary-description-container');
-            
-            let enrichedLocation = '';
-            if (metaContainer) {
-                const textNodes = Array.from(metaContainer.querySelectorAll('span')).map(s => s.innerText.trim());
-                // Find first non-empty, non-relative-time node
-                enrichedLocation = textNodes.find(t => t.length > 2 && !t.includes('ago') && !t.includes('apply')) || '';
-            }
-
-            // 3. Work Mode Identification (Remote/On-site/Hybrid)
-            const preferences = document.querySelectorAll('.job-details-fit-level-preferences button, .job-details-jobs-unified-top-card__job-insight');
-            let workType = '';
-            preferences.forEach(p => {
-                const t = p.innerText.toUpperCase();
-                if (t.includes('REMOTE') || t.includes('ON-SITE') || t.includes('HYBRID')) {
-                    workType = t;
-                }
-            });
-
-            return { description, location: enrichedLocation, workType };
-        }""")
-        
-        return intel
-    except Exception as e:
-        print(f"⚠️ Detail panel ingest failed: {e}")
-        return {"description": "", "location": "", "workType": ""}
-        
-        return {"description": "", "location": "", "workType": ""}
 
 
 class JobScoutService:
@@ -276,6 +125,189 @@ class JobScoutService:
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=settings.NVIDIA_API_KEY
         ) if settings.NVIDIA_API_KEY else None
+
+    async def _extract_card_data_linkedin(self, card) -> dict:
+        try:
+            data = await card.evaluate("""(el) => {
+                // Multiple title selectors to handle different LinkedIn experiments
+                const titleEl = el.querySelector(
+                    'a.job-card-list__title--link > span[aria-hidden="true"], ' +
+                    'a.job-card-list__title > span[aria-hidden="true"], ' +
+                    'h3.base-search-card__title, ' +
+                    '.full-width.artdeco-entity-lockup__title, ' +
+                    'a.job-card-list__title--link'
+                );
+                
+                let title = titleEl ? titleEl.innerText.trim() : '';
+                if (title) {
+                    // Deduplicate repetitive titles like "Software Engineer Software Engineer"
+                    const words = title.split(/\\s+/);
+                    if (words.length >= 2 && words.length % 2 === 0) {
+                        const half = words.length / 2;
+                        if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+                            title = words.slice(0, half).join(' ');
+                        }
+                    }
+                }
+
+                const linkEl = el.querySelector('a.job-card-list__title--link, a.job-card-list__title, h3.base-search-card__title a, .base-card__full-link');
+                const href = linkEl ? linkEl.getAttribute('href') : '';
+
+                const companyEl = el.querySelector(
+                    '.job-card-container__primary-description, ' +
+                    '.job-card-container__company-name, ' +
+                    '.base-search-card__subtitle, ' +
+                    '.artdeco-entity-lockup__subtitle'
+                );
+                const company = companyEl ? companyEl.innerText.replace(/\\n/g, '').trim() : '';
+
+                const locationEl = el.querySelector(
+                    '.job-card-container__metadata-item, ' +
+                    '.job-card-container__metadata-wrapper, ' +
+                    '.job-search-card__location, ' +
+                    '.artdeco-entity-lockup__metadata, ' +
+                    '.job-card-container__company-name + span'
+                );
+                let location = locationEl ? locationEl.innerText.trim() : '';
+                
+                // TACTICAL: Clean up "Location (Remote)" or "Location (On-site)"
+                if (location.includes('\\n')) location = location.split('\\n')[0].trim();
+
+                const jobId = el.getAttribute('data-occludable-job-id') || el.getAttribute('data-job-id') || '';
+
+                return { title, href, company, location, jobId };
+            }""")
+            return data
+        except Exception:
+            return {"title": "", "href": "", "company": "", "location": "", "jobId": ""}
+
+    async def _extract_card_data_generic(self, card, config, location_default: str) -> dict:
+        try:
+            title_el = None
+            for tsel in (config.get("title_selector") or "").split(", "):
+                title_el = await card.query_selector(tsel.strip())
+                if title_el: break
+            
+            company_el = None
+            for csel in (config.get("company_selector") or "").split(", "):
+                company_el = await card.query_selector(csel.strip())
+                if company_el: break
+
+            location_el = None
+            for lsel in (config.get("location_selector") or "").split(", "):
+                location_el = await card.query_selector(lsel.strip())
+                if location_el: break
+
+            title = (await title_el.inner_text() if title_el else "").strip()
+            company = (await company_el.inner_text() if company_el else "").strip()
+            loc = (await location_el.inner_text() if location_el else location_default).strip()
+            link = await title_el.get_attribute("href") if title_el else ""
+
+            # TACTICAL: Extract secondary skills/tags for better AI matching
+            tags = []
+            if config.get("tags_selector"):
+                tag_elements = await card.query_selector_all(config["tags_selector"])
+                for t_el in tag_elements:
+                    tags.append((await t_el.inner_text()).strip())
+            
+            # EXTRACT: Job snippet/description from card if available
+            desc_snippet = ""
+            if config.get("description_selector"):
+                desc_el = await card.query_selector(config["description_selector"])
+                if desc_el:
+                    desc_snippet = (await desc_el.inner_text()).strip()
+
+            # EXTRACT: Freshness Signal (Temporal context)
+            posted_at = ""
+            if config.get("posted_selector"):
+                posted_el = await card.query_selector(config["posted_selector"])
+                if posted_el:
+                    posted_at = (await posted_el.inner_text()).strip()
+
+            return {
+                "title": title, 
+                "company": company, 
+                "location": loc, 
+                "href": link,
+                "tags": ", ".join(tags) if tags else "",
+                "description": desc_snippet,
+                "posted_at": posted_at
+            }
+        except Exception:
+            return {"title": "", "company": "", "location": "", "href": "", "posted_at": ""}
+
+    async def _get_job_detail_via_panel(self, page, card, job_id: str, timeout: int = 8000) -> dict:
+        try:
+            # TACTICAL: Clear the panel content pool to prevent "Intelligence Ghosting" (stale data)
+            await page.evaluate("""() => {
+                const hubs = [
+                    '#job-details', '.jobs-description-content__text', '.jobs-description__content', 
+                    '.jobs-box__html-content', '.jobDescriptionNew', '#jdSection', 
+                    '.job-view-layout', '#jobDescriptionText'
+                ];
+                hubs.forEach(s => {
+                    const el = document.querySelector(s);
+                    if (el) el.innerHTML = '<div id="d-loading-blueprint">NEURAL_HYDRATION_ACTIVE</div>';
+                });
+            }""")
+
+            await self._visual_pulse_on_element(card, "click")
+            await card.click(force=True)
+            
+            # LinkedIn and Foundit JD side-panels
+            panel_selectors = ".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container, #jobDescriptionText"
+            await page.wait_for_selector(panel_selectors, timeout=timeout)
+            
+            # HYDRATION PULSE: Wait until the loading placeholder is replaced by actual career data
+            await page.wait_for_function(f"""(sel) => {{
+                const el = document.querySelector(sel);
+                return el && el.innerText.length > 50 && !el.innerText.includes('NEURAL_HYDRATION_ACTIVE');
+            }}""", panel_selectors, timeout=timeout)
+            
+            await asyncio.sleep(0.5) # Final stability grace period
+            
+            intel = await page.evaluate("""() => {
+                // 1. Description Drill (Multi-Platform Signature Ingest)
+                const panel = document.querySelector('#jobDescriptionText') || 
+                              document.querySelector('#job-details') || 
+                              document.querySelector('.jobs-description-content__text') ||
+                              document.querySelector('.jobs-description__content') || 
+                              document.querySelector('.jobs-box__html-content') || 
+                              document.querySelector('.jobDescriptionNew') || 
+                              document.querySelector('#jdSection') || 
+                              document.querySelector('.yS4Xce') || // Google Side Panel
+                              document.querySelector('.vL0S7c') || // Google Secondary Side Panel
+                              document.querySelector('.job-view-layout');
+                const description = panel ? panel.innerText.trim() : '';
+
+                // 2. Mission-Critical Meta Ingest (LinkedIn Specific)
+                const metaContainer = document.querySelector('.job-details-jobs-unified-top-card__tertiary-description-container') ||
+                                     document.querySelector('.job-details-jobs-unified-top-card__primary-description-container');
+                
+                let enrichedLocation = '';
+                if (metaContainer) {
+                    const textNodes = Array.from(metaContainer.querySelectorAll('span')).map(s => s.innerText.trim());
+                    // Find first non-empty, non-relative-time node
+                    enrichedLocation = textNodes.find(t => t.length > 2 && !t.includes('ago') && !t.includes('apply')) || '';
+                }
+
+                // 3. Work Mode Identification (Remote/On-site/Hybrid)
+                const preferences = document.querySelectorAll('.job-details-fit-level-preferences button, .job-details-jobs-unified-top-card__job-insight');
+                let workType = '';
+                preferences.forEach(p => {
+                    const t = p.innerText.toUpperCase();
+                    if (t.includes('REMOTE') || t.includes('ON-SITE') || t.includes('HYBRID')) {
+                        workType = t;
+                    }
+                });
+
+                return { description, location: enrichedLocation, workType };
+            }""")
+            
+            return intel
+        except Exception as e:
+            print(f"⚠️ Detail panel ingest failed: {e}")
+            return {"description": "", "location": "", "workType": ""}
 
     async def _close_common_popups(self, page):
         """Tactical suppression of overlays that block mission-critical clicks."""
@@ -316,7 +348,34 @@ class JobScoutService:
                         <div style="width:10px;height:10px;background:#10b981;border-radius:50%;box-shadow:0 0 15px #10b981;animation:d-pulse 2s infinite;"></div>
                         <span style="font-weight:900;letter-spacing:3px;font-size:10px;text-transform:uppercase;color:#10b981;font-family:monospace;">Neural Mission Active : Interaction Locked</span>
                     </div>
-                    <style>@keyframes d-pulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }</style>
+                    <style>
+                        @keyframes d-pulse { 0%,100% { opacity:0.3; transform: scale(1); } 50% { opacity:1; transform: scale(1.2); } }
+                        @keyframes d-ripple { 
+                            0% { transform: scale(0); opacity: 1; }
+                            100% { transform: scale(3); opacity: 0; }
+                        }
+                        .d-scanned { 
+                            outline: 3px solid #10b981 !important; 
+                            outline-offset: -3px !important; 
+                            box-shadow: 0 0 20px rgba(16, 185, 129, 0.4) !important;
+                            transition: all 0.5s ease-on !important;
+                            position: relative !important;
+                        }
+                        .d-scanned::after {
+                            content: 'NEURAL SCAN ACTIVE';
+                            position: absolute; top: 0; right: 0; background: #10b981;
+                            color: black; font-size: 8px; font-weight: 900; padding: 2px 6px;
+                            z-index: 100; font-family: monospace;
+                        }
+                        .d-click-pulse {
+                            position: absolute; border-radius: 50%;
+                            background: rgba(16, 185, 129, 0.6);
+                            border: 2px solid #10b981;
+                            pointer-events: none; z-index: 1000000;
+                            width: 50px; height: 50px; margin-left: -25px; margin-top: -25px;
+                            animation: d-ripple 0.6s ease-out forwards;
+                        }
+                    </style>
                 `;
                 Object.assign(banner.style, {
                     position: 'fixed', top: '0', left: '0', right: '0', height: '32px',
@@ -328,6 +387,32 @@ class JobScoutService:
                 document.documentElement.appendChild(lockout);
                 document.documentElement.appendChild(banner);
             }""")
+        except: pass
+
+    async def _visual_pulse_on_element(self, element, action_type="scan"):
+        """Highlight an element on the screen to show AI focus."""
+        try:
+            if action_type == "scan":
+                await element.evaluate("el => { el.classList.add('d-scanned'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }")
+            elif action_type == "click":
+                # Get coordinates for the pulse
+                box = await element.bounding_box()
+                if box:
+                    x, y = box['x'] + box['width']/2, box['y'] + box['height']/2
+                    await element.evaluate(f"""el => {{
+                        const pulse = document.createElement('div');
+                        pulse.className = 'd-click-pulse';
+                        pulse.style.left = '{x}px';
+                        pulse.style.top = '{y}px';
+                        document.body.appendChild(pulse);
+                        setTimeout(() => pulse.remove(), 700);
+                    }}""")
+        except: pass
+
+    async def _clear_visual_pulse(self, element):
+        """Clean up the neural scan highlights."""
+        try:
+            await element.evaluate("el => el.classList.remove('d-scanned')")
         except: pass
 
     async def _get_job_detail_via_popup(self, context, page, card, platform: str) -> str:
@@ -343,6 +428,7 @@ class JobScoutService:
             # We use a non-blocking waiter to capture the new tab
             page_promise = context.wait_for_event("page", timeout=15000)
             
+            await self._visual_pulse_on_element(card, "click")
             await card.evaluate('''(el) => {
                 const link = el.querySelector('a.title, .job-title, h2 a');
                 if (link) { link.scrollIntoView(); link.click(); }
@@ -382,7 +468,7 @@ class JobScoutService:
                     return document.body.innerText.trim().substring(0, 5000);
                 }""")
                 
-                return desc[:4500] if desc else ""
+                return desc[:15000] if desc else ""
             finally:
                 if new_page:
                     await new_page.close(run_before_unload=False)
@@ -417,7 +503,7 @@ class JobScoutService:
         
         MISSION SPECIFICATIONS:
         - Job Title: {job_title}
-        - Job Description: {job_description[:2500]}
+        - Job Description: {job_description[:15000]}
 
         MISSION GUIDELINES:
         - BE SKEPTICAL: High scores (70%+) are reserved ONLY for surgical matches where both stack and seniority align.
@@ -456,9 +542,6 @@ class JobScoutService:
             response_text = completion.choices[0].message.content
             if not response_text:
                 raise ValueError("Payload missing from binary stream.")
-
-            # DEBUG: Diagnostic dump for developer visibility
-            # print(f"--- [MISSION INTEL RAW] ---\n{response_text}\n--- [END INTEL] ---")
 
             # TACTICAL: Surgical Isolation Hub
             # We locate the FIRST '{' and the LAST '}' to isolate the candidate object
@@ -522,6 +605,98 @@ class JobScoutService:
             fallback["reason"] = f"Cyber-Resilience Fallback ({msg})."
             return fallback
 
+    async def _refine_search_directive(self, target_role: str, skills: str) -> str:
+        """Use AI to distill a high-impact search query from the user's role and skills."""
+        if not self.nim_client:
+            # Fallback: Merge role and primary skills
+            combined = f"{target_role} {skills}"
+            clean = re.sub(r'[^\w\s]', '', combined)
+            return " ".join(clean.split()[:8])
+
+        prompt = f"""
+        [JOB SEARCH QUERY OPTIMIZATION]
+        Create a surgical job search query (keywords) for this candidate.
+        
+        ROLE: {target_role}
+        SKILLS: {skills}
+
+        GUIDELINES:
+        - Combine the ROLE with ALL highly relevant technical skills from the provided list.
+        - The goal is to create a comprehensive and surgical search query that covers the candidate's core stack.
+        - DO NOT include location, experience years, or generic terms like "jobs".
+        - Example Output: "Full Stack Web Developer NodeJS React Typescript MongoDB Expert".
+        - Return ONLY the string. NO quotes. NO explanation.
+        - Maximum length: 12 words.
+        """
+        try:
+            completion = await self.nim_client.chat.completions.create(
+                model=settings.MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=64,
+                timeout=8.0
+            )
+            distilled = completion.choices[0].message.content.strip().strip('"').strip("'")
+            # If AI returns empty or nonsense, fallback to truncation
+            if len(distilled) < 3: raise ValueError("AI output too short.")
+            return distilled
+        except Exception as e:
+            print(f"⚠️ Intent extraction failed: {e}")
+            return " ".join(f"{target_role} {skills}".split()[:7])
+
+    async def _ai_scan_for_career_links(self, page) -> list:
+        """Use AI to identify high-value career portal links from the search result matrix."""
+        try:
+            # 1. Harvest candidates from the blue link matrix
+            links_data = await page.evaluate("""() => {
+                const results = [];
+                // Target generic Google search result blocks
+                const blocks = document.querySelectorAll('div.g, div.tF2Cxc, div.v7W49e');
+                blocks.forEach(b => {
+                    const title = b.querySelector('h3')?.innerText || '';
+                    const link = b.querySelector('a')?.href || '';
+                    const snippet = b.innerText.substring(0, 200);
+                    if (link && !link.includes('google.com')) {
+                        results.push({ title, link, snippet });
+                    }
+                });
+                return results;
+            }""")
+            
+            if not links_data: return []
+
+            # 2. Use AI to prune noise (aggregators) and prioritize company portals
+            if not self.nim_client: return [l["link"] for l in links_data[:5]]
+
+            prompt = f"""
+            [TACTICAL LINK ANALYSIS]
+            Identify which of these Google search results are likely DIRECT COMPANY CAREER PAGES or SPECIFIC JOB POSTINGS.
+            Prune generic job aggregators (LinkedIn, Indeed, Naukri, Monster, etc.) unless they are the direct source.
+            
+            RESULTS:
+            {json.dumps(links_data[:15])}
+
+            GUIDELINES:
+            - Return ONLY a JSON array of the most promising URLs.
+            - Cap results at top 6.
+            """
+            completion = await self.nim_client.chat.completions.create(
+                model=settings.MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=512,
+                timeout=10.0
+            )
+            raw = completion.choices[0].message.content.strip()
+            # Surgical isolation of JSON array
+            start, end = raw.find('['), raw.rfind(']')
+            if start != -1 and end != -1:
+                return json.loads(raw[start:end+1])
+            return [l["link"] for l in links_data[:3]]
+        except Exception as e:
+            print(f"⚠️ Link matrix scan failed: {e}")
+            return []
+
     async def run_search(self, user_id: int, user_email: str, platform: str, target_role: str, location: str, skills: str, db, summary: str = "", experience: str = "", years_of_exp: int = 0) -> AsyncGenerator[str, None]:
         from app.modules.job.model import JobRepository, JobStatus
         from app.modules.job.service import job_service
@@ -540,7 +715,7 @@ class JobScoutService:
         if scout_session:
             # Tactical Intent Preservation: Don't overwrite with empty mission directives
             target_role = target_role or scout_session.target_role
-            location = location or scout_session.location
+            location = location or scout_session.location or "India"
             
             yield json.dumps({"type": "thinking", "message": f"🔄 Hijacking Active Mission Context #{scout_session.id} for resumed tactical vector..."})
             scout_session.name = f"{target_role} · {platform}"
@@ -559,7 +734,7 @@ class JobScoutService:
                 user_id=user_id, 
                 name=f"{target_role} · {platform}", 
                 target_role=target_role, 
-                location=location, 
+                location=location or "India", 
                 platform=platform, 
                 status="running", 
                 current_task_id=task_nonce,
@@ -580,6 +755,11 @@ class JobScoutService:
         model_name = settings.MODEL_NAME
         key_valid = "PRESENT" if settings.NVIDIA_API_KEY else "MISSING"
         yield json.dumps({"type": "thinking", "message": f"🤖 AI Engine Ready (Model: {model_name})"})
+        
+        # TACTICAL: Distill the search intent from role and skill cluster
+        yield json.dumps({"type": "thinking", "message": "🧠 AI is distilling surgical search directive from profile and skills..."})
+        refined_query = await self._refine_search_directive(target_role, skills)
+        yield json.dumps({"type": "thinking", "message": f"🎯 Search Directive Refined: '{refined_query}'"})
         
         # BROADCAST: Signal drafting hub that a new session has initialized
         yield json.dumps({
@@ -647,9 +827,9 @@ class JobScoutService:
                 start_page = resumed_page if target_platform == resumed_platform else 1
                 
                 if target_platform in ["naukri", "foundit"]:
-                    search_url = config["search_url"](target_role, location, years_of_exp, page=start_page)
+                    search_url = config["search_url"](refined_query, location, years_of_exp, page=start_page)
                 else:
-                    search_url = config["search_url"](target_role, location, page=start_page)
+                    search_url = config["search_url"](refined_query, location, page=start_page)
 
                 yield json.dumps({"type": "thinking", "message": f"🌐 Navigating to {target_platform.upper()}..."})
                 try:
@@ -873,6 +1053,7 @@ class JobScoutService:
 
                             # HYDRATION PULSE: Ensure card is scrolled and technically visible
                             await card.scroll_into_view_if_needed()
+                            await self._visual_pulse_on_element(card, "scan")
                             await asyncio.sleep(1.0) # Tactical grace period for lazy-load
 
                             if is_linkedin:
@@ -882,11 +1063,11 @@ class JobScoutService:
                                 try: await card.wait_for_selector("a.job-card-list__title--link", timeout=2000)
                                 except: pass
                                 
-                                data = await _extract_card_data_linkedin(card)
+                                data = await self._extract_card_data_linkedin(card)
                             else:
                                 # 3. Hybrid Hydration Grace Period (Indeed)
                                 await asyncio.sleep(0.5) 
-                                data = await _extract_card_data_generic(card, config, location)
+                                data = await self._extract_card_data_generic(card, config, location)
 
                             title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
                             
@@ -908,14 +1089,19 @@ class JobScoutService:
                             
                             yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
                             
+                            # ARCHIVE CHECK: Avoid processing known leads to save neural resources
+                            from app.modules.job.model import JobRepository
+                            if db.query(JobRepository).filter(JobRepository.url == link).first():
+                                yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping mission node."}); continue
+
                             raw_job_desc = ""
                             enriched_meta = {}
                             
                             # Defend against blocking overlays
                             await self._close_common_popups(page)
 
-                            if is_linkedin or target_platform == "foundit":
-                                intel = await _get_job_detail_via_panel(page, card, job_id)
+                            if is_linkedin or target_platform == "foundit" or target_platform == "google" or target_platform == "indeed":
+                                intel = await self._get_job_detail_via_panel(page, card, job_id)
                                 raw_job_desc = intel.get("description", "")
                                 if intel.get("location"): 
                                     loc = intel["location"]
@@ -984,8 +1170,6 @@ class JobScoutService:
                             # Reset quality streak on clinical match
                             consecutive_skips = 0
 
-                            if db.query(JobRepository).filter(JobRepository.url == link).first():
-                                yield json.dumps({"type": "thinking", "message": "🗄️  Already in vault. Skipping."}); continue
 
                             job = job_service.save_scouted_job(db, user_id, {
                                 "title": title, 
@@ -1001,6 +1185,7 @@ class JobScoutService:
                                 "match_reason": reason
                             })
                             
+                            await self._clear_visual_pulse(card)
                             # LIVE TELEMETRY: Sync mission breakdown and total count to vault
                             platform_saved += 1
                             total_saved_count += 1
@@ -1015,6 +1200,47 @@ class JobScoutService:
                         except Exception as e:
                             yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
                     
+                    # TACTICAL DRILL: Google "Web Matrix" Expansion (Search for companies only listed on their pages)
+                    if target_platform == "google" and current_page == 1:
+                        yield json.dumps({"type": "thinking", "message": "🔍 AI Scanning Web Matrix for Hidden Career Portals..."})
+                        # TACTICAL: Switch to internal general search for this pass
+                        web_search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(refined_query)}+career+jobs+in+{urllib.parse.quote_plus(location)}"
+                        try:
+                            await page.goto(web_search_url, wait_until="domcontentloaded", timeout=30000)
+                            career_links = await self._ai_scan_for_career_links(page)
+                            
+                            for link in career_links:
+                                if not await _check_mission_integrity(): break
+                                if db.query(JobRepository).filter(JobRepository.url == link).first(): continue
+                                
+                                yield json.dumps({"type": "thinking", "message": f"🌐 Excavating Career Portal: {link[:40]}..."})
+                                try:
+                                    # Navigate to Company career page
+                                    await page.goto(link, wait_until="domcontentloaded", timeout=25000)
+                                    await asyncio.sleep(2.0)
+                                    await self._inject_control_overlay(page)
+                                    
+                                    # AI extraction from the raw HTML blueprint
+                                    page_text = await page.evaluate("() => document.body.innerText.substring(0, 6000)")
+                                    extract_prompt = f"Extract job title, company name, location, and full description from this page: {page_text[:5000]}"
+                                    # ... (scoring and saving as before)
+                                    ai_intel = await self._score_job_with_ai("Unknown", page_text, skills, target_role, summary, experience, years_of_exp)
+                                    
+                                    if ai_intel.get("score", 0) > 70:
+                                        # Use AI to find title/company if not obvious
+                                        job = job_service.save_scouted_job(db, user_id, {
+                                            "title": target_role, "company": "Direct Recruit", "location": location, 
+                                            "url": link, "platform": "google_web", "description": page_text[:12000], 
+                                            "heuristic_score": ai_intel["score"], "match_reason": ai_intel.get("reason", "")
+                                        })
+                                        total_saved_count += 1
+                                        yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": target_role, "company": "Direct Recruit", "location": location, "url": link, "score": ai_intel["score"], "reason": ai_intel.get("reason", ""), "platform": "google_web"}})
+                                except: pass
+                            
+                            # Resume structured widget mission
+                            await page.goto(search_url, wait_until="domcontentloaded")
+                        except: pass
+
                     current_page += 1
 
             yield json.dumps({"type": "done", "count": total_saved_count, "session_id": session_id})

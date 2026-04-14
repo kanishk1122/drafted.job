@@ -38,6 +38,11 @@ const PLATFORM_REGISTRY: Record<string, { name: string; icon: React.ReactNode; c
     icon: <img src="https://www.google.com/s2/favicons?domain=ambitionbox.com&sz=128" alt="AmbitionBox" className="w-4 h-4 object-contain" />, 
     color: "text-[#1C4E80]" 
   },
+  google: { 
+    name: "Google Jobs", 
+    icon: <img src="https://www.google.com/s2/favicons?domain=google.com&sz=128" alt="Google" className="w-4 h-4 object-contain" />, 
+    color: "text-[#4285F4]" 
+  },
 };
 
 interface InitiationViewProps {

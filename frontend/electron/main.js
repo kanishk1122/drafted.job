@@ -139,8 +139,8 @@ ipcMain.handle('set-auth-cookie', async (event, { name, value, expirationDate })
     path: '/',
     expirationDate: expirationDate || (Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 30)),
     sameSite: 'no_restriction',
-    secure: false, // Set false for localhost
-    httpOnly: false
+    secure: true, // REQUIRED for sameSite: 'no_restriction'
+    httpOnly: true // Allow overwriting backend-set HttpOnly cookies
   };
 
   try {

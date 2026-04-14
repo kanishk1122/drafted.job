@@ -17,6 +17,8 @@ export interface UserContext {
   glassdoor_active: boolean;
   ambitionbox_active: boolean;
   instahyre_active?: boolean;
+  google_active?: boolean;
+  google_email?: string;
   // Computed by backend: only platforms where _active === true
   active_platforms: string[];
 }

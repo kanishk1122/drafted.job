@@ -45,7 +45,7 @@ export default function DraftingPage() {
     );
   };
 
-  const PLATFORM_IDS = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre"];
+  const PLATFORM_IDS = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre", "google"];
   const activePlatforms: string[] = context
     ? PLATFORM_IDS.filter(p => {
       const key = `${p}_active` as keyof typeof context;

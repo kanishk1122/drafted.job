@@ -28,6 +28,8 @@ class UserContext(Base):
     foundit_active = Column(Boolean, default=False)
     glassdoor_active = Column(Boolean, default=False)
     ambitionbox_active = Column(Boolean, default=False)
+    google_email = Column(String(255))
+    google_active = Column(Boolean, default=False)
 
     resumes = relationship("Resume", back_populates="user")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")

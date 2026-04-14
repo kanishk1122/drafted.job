@@ -57,7 +57,7 @@ const authSlice = createSlice({
       state.fullName = action.payload.full_name;
       state.error = null;
       if (typeof window !== 'undefined') {
-        localStorage.setItem('user_id', action.payload.id.toString());
+        if (action.payload.id) localStorage.setItem('user_id', action.payload.id.toString());
         localStorage.setItem('user_email', action.payload.email);
         localStorage.setItem('full_name', action.payload.full_name);
         localStorage.setItem('is_authenticated', 'true');
@@ -102,7 +102,7 @@ const authSlice = createSlice({
         state.userEmail = action.payload.email;
         state.fullName = action.payload.full_name;
         if (typeof window !== 'undefined') {
-          localStorage.setItem('user_id', action.payload.id.toString());
+          if (action.payload.id) localStorage.setItem('user_id', action.payload.id.toString());
           localStorage.setItem('user_email', action.payload.email);
           localStorage.setItem('full_name', action.payload.full_name);
           localStorage.setItem('is_authenticated', 'true');

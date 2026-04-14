@@ -7,7 +7,7 @@ from app.modules.user.schema import UserCreate, UserLogin, UserUpdate
 from jose import JWTError, jwt
 from app.core.redis import cached, cache
 
-PLATFORM_LIST = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre"]
+PLATFORM_LIST = ["linkedin", "naukri", "indeed", "foundit", "glassdoor", "ambitionbox", "instahyre", "google"]
 
 class UserService:
 
@@ -34,6 +34,8 @@ class UserService:
             "glassdoor_active": user.glassdoor_active,
             "ambitionbox_active": user.ambitionbox_active,
             "instahyre_active": getattr(user, "instahyre_active", False),
+            "google_active": getattr(user, "google_active", False),
+            "google_email": getattr(user, "google_email", None),
             # Computed: list of activated platform IDs for UI
             "active_platforms": active_platforms,
         }
@@ -74,6 +76,7 @@ class UserService:
         self._set_auth_cookie(response, access_token)
 
         return {
+            "id": new_user.id,
             "full_name": new_user.full_name, 
             "email": new_user.email,
             "access_token": access_token  # NEW: Return token to frontend
@@ -88,6 +91,7 @@ class UserService:
         self._set_auth_cookie(response, access_token)
 
         return {
+            "id": user.id,
             "full_name": user.full_name, 
             "email": user.email,
             "access_token": access_token  # NEW: Return token to frontend

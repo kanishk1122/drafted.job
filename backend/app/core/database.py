@@ -14,9 +14,9 @@ while not connected:
         engine = create_engine(settings.DATABASE_URL)
         with engine.connect() as conn:
             connected = True
-            print("📦 Database Connection: ESTABLISHED")
+            print("Database Connection: ESTABLISHED")
     except Exception as e:
-        print(f"⌛ Waiting for Database: {e}")
+        print(f"Waiting for Database: {e}")
         time.sleep(2)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

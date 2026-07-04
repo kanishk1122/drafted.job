@@ -11,9 +11,9 @@ class RedisCache:
             try:
                 self.client = redis.from_url(settings.REDIS_URL, decode_responses=True)
                 self.client.ping()
-                print("🚀 Redis Cache: Connection established.")
+                print("Redis Cache: Connection established.")
             except Exception as e:
-                print(f"⚠️ Redis Cache: Connection failed: {e}")
+                print(f"Redis Cache: Connection failed: {e}")
                 self.client = None
 
     def get(self, key: str) -> Optional[Any]:
@@ -41,7 +41,7 @@ class RedisCache:
             serialized_val = json.dumps(value, default=alchemy_encoder)
             self.client.setex(key, expire_seconds, serialized_val)
         except Exception as e:
-            print(f"⚠️ Redis Cache: Serialization failed: {e}")
+            print(f"Redis Cache: Serialization failed: {e}")
 
     def delete(self, key: str):
         if not self.client:

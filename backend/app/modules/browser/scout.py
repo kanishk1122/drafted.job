@@ -10,24 +10,29 @@ import re
 
 PLATFORM_SEARCH_CONFIG = {
     "linkedin": {
-        "search_url": lambda q, loc, page=1: (
+        "search_url": lambda q, loc, yox=0, page=1: (
             f"https://www.linkedin.com/jobs/search/"
             f"?keywords={urllib.parse.quote_plus(q)}"
             f"&location={urllib.parse.quote_plus(loc)}"
             f"&f_TPR=r86400"
-            f"&start={25 * (page - 1)}"
+            f"&distance=100"
+            f"&origin=JOB_SEARCH_PAGE_JOB_FILTER"
+            + (f"&f_E={'1' if 'intern' in q.lower() else '2' if yox <= 1 else '2%2C3' if yox <= 3 else '3%2C4' if yox <= 6 else '4%2C5' if yox <= 10 else '5%2C6'}" if yox is not None else "")
+            + f"&start={25 * (page - 1)}"
         ),
         "job_card_selectors": [
             "li[data-occludable-job-id]",
             "li.jobs-search-results__list-item",
-            "div.job-search-card",
-            "div[data-job-id]",
             ".scaffold-layout__list-item",
+            ".job-card-container",
+            "[data-job-id]",
+            "div.job-search-card",
+            "li.artdeco-list__item"
         ],
-        "wait_selector": "li[data-occludable-job-id], li.jobs-search-results__list-item, div.job-search-card",
-        "title_selector": "a.job-card-list__title--link, a.job-card-list__title, h3.base-search-card__title a",
-        "company_selector": ".job-card-container__primary-description, .base-search-card__subtitle, .job-card-container__company-name",
-        "location_selector": ".job-card-container__metadata-item, .job-search-card__location, .base-search-card__metadata",
+        "wait_selector": "li[data-occludable-job-id], li.jobs-search-results__list-item, .scaffold-layout__list-item, .job-card-container",
+        "title_selector": "a.job-card-list__title--link, a.job-card-list__title, h3.base-search-card__title a, .artdeco-entity-lockup__title a",
+        "company_selector": ".job-card-container__primary-description, .base-search-card__subtitle, .job-card-container__company-name, .artdeco-entity-lockup__subtitle",
+        "location_selector": ".job-card-container__metadata-item, .job-search-card__location, .base-search-card__metadata, .artdeco-entity-lockup__metadata",
     },
     "indeed": {
         "search_url": lambda q, loc, page=1: (
@@ -506,13 +511,15 @@ class JobScoutService:
         - Job Description: {job_description[:15000]}
 
         MISSION GUIDELINES:
-        - BE SKEPTICAL: High scores (70%+) are reserved ONLY for surgical matches where both stack and seniority align.
-        - PENALIZE GAPS: If a job mentions specific technologies (Angular, Vue, iOS, Android, Flutter) that are MISSING from the profile, the score MUST drop by at least 30 points.
+        - BE SKEPTICAL BUT PRAGMATIC: Only award a 100% score if the candidate's core stack matches the job's core requirements perfectly.
+        - ROLE PARITY: Consider 'Web Developer' and 'Full Stack Developer' synonymous (100% match) if the tech stack (e.g., Python/Node/React) aligns with the candidate's arsenal.
+        - PENALIZE HARD GAPS: If a specific required technology (e.g. AWS, Kubernetes) is missing from the profile, THE SCORE CANNOT BE 100%.
         
         MATCH INVARIANTS:
-        1. SENIORITY: If job requires > {years_of_exp} years of experience, score MUST be capped at 30%.
-        2. UNSUPPORTED STACK: If the job requires highly specific frameworks NOT in the candidate's stack (e.g. Angular when candidate is React-only, or Mobile when candidate is Web-only), score MUST be capped at 50%.
-        3. CORE ALIGNMENT: Required stack must match React or Node for scores > 70%.
+        1. SENIORITY: If the candidate has 0-1 years of experience and the job requires 1-2 years, this IS a match (100%) as long as the tech stack is perfect. Junior transitions (0 -> 1-2) are considered parity.
+        2. HARD SENIORITY: If the job requires > {years_of_exp} years of experience, score MUST be capped at 30%.
+        3. UNSUPPORTED STACK: If the job requires specific languages NOT in the candidate's stack (e.g. Java when candidate is Python/Node only), score MUST be capped at 50%.
+        4. 100% REQUIREMENT: Flawless alignment of core stack and role intent receives 100%.
         
         OUTPUT PROTOCOL:
         - Return ONLY a raw JSON object string.
@@ -605,44 +612,69 @@ class JobScoutService:
             fallback["reason"] = f"Cyber-Resilience Fallback ({msg})."
             return fallback
 
-    async def _refine_search_directive(self, target_role: str, skills: str) -> str:
-        """Use AI to distill a high-impact search query from the user's role and skills."""
+    async def _extract_mission_intent(self, target_role: str, user_skills: str) -> dict:
+        """Use AI to parse the user's request into a structured mission intent JSON."""
         if not self.nim_client:
-            # Fallback: Merge role and primary skills
-            combined = f"{target_role} {skills}"
-            clean = re.sub(r'[^\w\s]', '', combined)
-            return " ".join(clean.split()[:8])
+            return {"role": target_role, "skills": user_skills, "seniority": "all", "type": "job"}
 
         prompt = f"""
-        [JOB SEARCH QUERY OPTIMIZATION]
-        Create a surgical job search query (keywords) for this candidate.
+        [MISSION INTENT EXTRACTION]
+        Convert this job search request into a structured tactical JSON.
         
-        ROLE: {target_role}
-        SKILLS: {skills}
+        USER REQUEST: {target_role}
+        USER PROFILE SKILLS: {user_skills}
 
-        GUIDELINES:
-        - Combine the ROLE with ALL highly relevant technical skills from the provided list.
-        - The goal is to create a comprehensive and surgical search query that covers the candidate's core stack.
-        - DO NOT include location, experience years, or generic terms like "jobs".
-        - Example Output: "Full Stack Web Developer NodeJS React Typescript MongoDB Expert".
-        - Return ONLY the string. NO quotes. NO explanation.
-        - Maximum length: 12 words.
+        EXTRACT:
+        - primary_role: The main title (e.g., "Full Stack Developer")
+        - tech_stack: Array of MUST-HAVE technologies extracted from request and profile.
+        - seniority: "Intern", "Entry", "Junior", "Mid", "Senior", "Lead", or "none" (if not specified).
+        - job_type: "Internship" or "Full-time" (default: "Full-time" unless "intern" mentioned).
+        - search_filters: Any specific filters like "Remote", "Part-time", or specific companies.
+
+        RETURN ONLY JSON. No explanation.
         """
         try:
             completion = await self.nim_client.chat.completions.create(
                 model=settings.MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
-                max_tokens=64,
-                timeout=8.0
+                response_format={"type": "json_object"}
             )
-            distilled = completion.choices[0].message.content.strip().strip('"').strip("'")
-            # If AI returns empty or nonsense, fallback to truncation
-            if len(distilled) < 3: raise ValueError("AI output too short.")
-            return distilled
-        except Exception as e:
-            print(f"⚠️ Intent extraction failed: {e}")
-            return " ".join(f"{target_role} {skills}".split()[:7])
+            return json.loads(completion.choices[0].message.content)
+        except:
+            return {"role": target_role, "skills": user_skills, "seniority": "none", "type": "Full-time"}
+
+    async def _refine_search_directive(self, intent: dict, platform: str = "generic") -> str:
+        """Use structured AI intent to create a platform-optimized search string."""
+        if not self.nim_client:
+            return f"{intent.get('role', '')} {intent.get('skills', '')}"[:40]
+
+        prompt = f"""
+        [JOB SEARCH QUERY OPTIMIZATION - TARGET: {platform.upper()}]
+        Create a surgical search query optimized for {platform.upper()} based on this INTENT.
+        
+        INTENT: {json.dumps(intent)}
+
+        PLATFORM SPECIFICATIONS:
+        - LinkedIn/Indeed: MUST use strict Boolean grouping. (Role1 OR Role2) AND (Tech1 OR Tech2).
+        - Naukri/Foundit: Space-separated keywords or simple comma clusters.
+        - Google: Phrase-wrapped titles with core skills.
+
+        GUIDELINES:
+        - Include NO location or seniority terms unless explicitly part of the role title.
+        - Focus on discovering as many relevant roles as possible.
+        - Return ONLY the optimized search string.
+        """
+        try:
+            completion = await self.nim_client.chat.completions.create(
+                model=settings.MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=64
+            )
+            return completion.choices[0].message.content.strip().replace('"', '')
+        except:
+            return f"{intent.get('primary_role', '')} {', '.join(intent.get('tech_stack', []))}"
 
     async def _ai_scan_for_career_links(self, page) -> list:
         """Use AI to identify high-value career portal links from the search result matrix."""
@@ -757,9 +789,8 @@ class JobScoutService:
         yield json.dumps({"type": "thinking", "message": f"🤖 AI Engine Ready (Model: {model_name})"})
         
         # TACTICAL: Distill the search intent from role and skill cluster
-        yield json.dumps({"type": "thinking", "message": "🧠 AI is distilling surgical search directive from profile and skills..."})
-        refined_query = await self._refine_search_directive(target_role, skills)
-        yield json.dumps({"type": "thinking", "message": f"🎯 Search Directive Refined: '{refined_query}'"})
+        yield json.dumps({"type": "thinking", "message": "🧠 AI is distilling mission intent from profile data..."})
+        mission_intent = await self._extract_mission_intent(target_role, skills)
         
         # BROADCAST: Signal drafting hub that a new session has initialized
         yield json.dumps({
@@ -769,7 +800,8 @@ class JobScoutService:
                 "platform": platform,
                 "name": scout_session.name,
                 "target_role": target_role,
-                "date": scout_session.created_at.isoformat() if scout_session.created_at else ""
+                "date": scout_session.created_at.isoformat() if scout_session.created_at else "",
+                "intent": mission_intent
             }
         })
 
@@ -818,6 +850,11 @@ class JobScoutService:
                 scout_session.current_platform = target_platform
                 db.commit()
                 
+                # 0. TACTICAL: Distill the search intent specifically for this platform
+                yield json.dumps({"type": "thinking", "message": f"🧠 AI is distilling surgical search directive for {target_platform.upper()}..."})
+                refined_query = await self._refine_search_directive(mission_intent, platform=target_platform)
+                yield json.dumps({"type": "thinking", "message": f"🎯 {target_platform.upper()} Directive: '{refined_query}'"})
+
                 config = PLATFORM_SEARCH_CONFIG.get(target_platform)
                 if not config:
                     yield json.dumps({"type": "thinking", "message": f"⚠️ Unsupported platform: {target_platform}. Skipping node."})
@@ -826,7 +863,7 @@ class JobScoutService:
                 # 1. Determine starting page for this platform in this mission turn
                 start_page = resumed_page if target_platform == resumed_platform else 1
                 
-                if target_platform in ["naukri", "foundit"]:
+                if target_platform in ["naukri", "foundit", "linkedin"]:
                     search_url = config["search_url"](refined_query, location, years_of_exp, page=start_page)
                 else:
                     search_url = config["search_url"](refined_query, location, page=start_page)
@@ -1138,7 +1175,7 @@ class JobScoutService:
                                 desc_lower = (title + " " + job_desc + " " + target_role).lower()
                                 matches = sum(1 for s in skills_list if s in desc_lower)
                                 score = min(100, int((matches / max(len(skills_list), 1)) * 100))
-                                res = {"score": score, "reason": f"Heuristic Analysis (Signal Offline): Found {matches} match vectors.", "skip": score < 40}
+                                res = {"score": score, "reason": f"Heuristic Analysis (Signal Offline): Found {matches} match vectors.", "skip": score < 100}
 
                             reason, score = res.get("reason", "Analysis complete."), res.get("score", 0)
                             
@@ -1156,9 +1193,9 @@ class JobScoutService:
                             yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
 
                             
-                            if score <= 70:
+                            if score < 100:
                                 consecutive_skips += 1
-                                yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match too low - 70% required)"})
+                                yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match - 100% required)"})
                                 yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
                                 
                                 if consecutive_skips >= 20:
@@ -1226,7 +1263,7 @@ class JobScoutService:
                                     # ... (scoring and saving as before)
                                     ai_intel = await self._score_job_with_ai("Unknown", page_text, skills, target_role, summary, experience, years_of_exp)
                                     
-                                    if ai_intel.get("score", 0) > 70:
+                                    if ai_intel.get("score", 0) == 100:
                                         # Use AI to find title/company if not obvious
                                         job = job_service.save_scouted_job(db, user_id, {
                                             "title": target_role, "company": "Direct Recruit", "location": location, 

@@ -13,7 +13,7 @@ export const useNotificationSocket = () => {
 
     // Use absolute URL for WebSocket
     // In production, this might need to handle wss:// and different domains
-    const wsUrl = `ws://localhost:5000/api/v1/notification/ws/${userId}`;
+    const wsUrl = `ws://127.0.0.1:5000/api/v1/notification/ws/${userId}`;
     
     const connect = () => {
        console.log(`[WS] Connecting to ${wsUrl}...`);

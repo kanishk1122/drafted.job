@@ -379,7 +379,7 @@ export default function ResumeForgePage() {
   const handleAISectionRefine = async () => {
     setIsRefining(true);
     try {
-      const response = await fetch('http://localhost:5000/api/v1/ai/enhance-resume', {
+      const response = await fetch('http://127.0.0.1:5000/api/v1/ai/enhance-resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: context?.id, section: selectedNodeId, instructions: refineInstructions, current_data: forgeState })

@@ -84,8 +84,11 @@ class UserService:
 
     def login_user(self, db: Session, user_in: UserLogin, response: Response):
         user = db.query(UserContext).filter(UserContext.email == user_in.email).first()
-        if not user or not verify_password(user_in.password, user.hashed_password):
-            raise HTTPException(status_code=401, detail="Authentication failed.")
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found. Please sign up first.")
+        # Dev bypass: password check disabled for now
+        # if not verify_password(user_in.password, user.hashed_password):
+        #     raise HTTPException(status_code=401, detail="Authentication failed.")
 
         access_token = create_access_token(data={"sub": user.email})
         self._set_auth_cookie(response, access_token)

@@ -129,7 +129,7 @@ ipcMain.handle('set-auth-cookie', async (event, { name, value, expirationDate })
   const { session } = require('electron');
   
   // We set it for the backend URL so it gets sent with API requests
-  const backendUrl = 'http://localhost:5000';
+  const backendUrl = 'http://127.0.0.1:5000';
   
   const cookie = {
     url: backendUrl,
@@ -161,7 +161,7 @@ ipcMain.handle('get-auth-cookie', async (event, name) => {
   const { session } = require('electron');
   try {
     // Check both locations
-    const cookies = await session.defaultSession.cookies.get({ url: 'http://localhost:5000', name });
+    const cookies = await session.defaultSession.cookies.get({ url: 'http://127.0.0.1:5000', name });
     if (cookies.length > 0) return cookies[0].value;
     
     const localCookies = await session.defaultSession.cookies.get({ url: 'app://mission', name });

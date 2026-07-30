@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import { fetchBrowserSessions, addLocalSession } from "@/lib/redux/slices/browserSlice";
 import { fetchJobs, resetJobs, fetchJobMetrics } from "@/lib/redux/slices/jobSlice";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5000/api/v1";
 const LS_KEY = "active_mission_state";
 
 export default function MissionPageWrapper() {

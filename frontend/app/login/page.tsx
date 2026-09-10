@@ -63,7 +63,10 @@ export default function LoginPage() {
           value: data.access_token
         });
       }
-      // Browser: httponly cookie already set by backend response — no action needed
+      // Web browser: persist token for Authorization header on all API calls
+      if (typeof window !== "undefined" && data.access_token) {
+        localStorage.setItem('access_token', data.access_token);
+      }
 
       dispatch(loginSuccess({ 
         id: data.id,

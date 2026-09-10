@@ -81,6 +81,7 @@ const authSlice = createSlice({
         localStorage.removeItem('user_email');
         localStorage.removeItem('full_name');
         localStorage.removeItem('is_authenticated');
+        localStorage.removeItem('access_token');
       }
     },
     setAuth: (state, action: PayloadAction<{ id: number | null; email: string | null; full_name: string | null }>) => {

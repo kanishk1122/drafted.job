@@ -9,15 +9,19 @@ export class ApiService {
   protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    // Electron: inject token from native store as Authorization header
+    // Token resolution: Electron native store → localStorage (web browser)
     let authHeader: Record<string, string> = {};
-    if (typeof window !== "undefined" && (window as any).electron) {
-      try {
-        const token = await (window as any).electron.invoke('get-auth-cookie', 'access_token');
-        if (token) authHeader = { "Authorization": `Bearer ${token}` };
-      } catch (e) {
-        console.error("Failed to retrieve native auth cookie", e);
+    if (typeof window !== "undefined") {
+      let token: string | null = null;
+      if ((window as any).electron) {
+        try {
+          token = await (window as any).electron.invoke('get-auth-cookie', 'access_token');
+        } catch (e) {
+          console.error("Failed to retrieve native auth cookie", e);
+        }
       }
+      if (!token) token = localStorage.getItem('access_token');
+      if (token) authHeader = { "Authorization": `Bearer ${token}` };
     }
 
     const defaultOptions: RequestInit = {

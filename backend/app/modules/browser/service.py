@@ -1,5 +1,10 @@
 import os
+import sys
 import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from playwright.async_api import async_playwright
 from pathlib import Path
 
@@ -54,49 +59,52 @@ class BrowserService:
             await context.close()
             await pw.stop()
 
-    async def connect_to_local_chrome(self, host: str = "host.docker.internal", port: int = 9223, retries: int = 3):
+    async def connect_to_local_chrome(self, host: str = "127.0.0.1", port: int = 9223, retries: int = 3):
         """
         Connects to local Chrome via CDP with retry logic.
         Chrome must be running with --remote-debugging-port=9223 --remote-debugging-address=0.0.0.0
         """
         import httpx
-        browser_url = f"http://{host}:{port}"
+        target_hosts = [host, "127.0.0.1", "localhost", "host.docker.internal"]
+        target_hosts = list(dict.fromkeys(target_hosts))
         last_error = None
 
         for attempt in range(1, retries + 1):
             pw = await async_playwright().start()
-            try:
-                print(f"📡 [{attempt}/{retries}] Probing DevTools at {browser_url}/json/version...")
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"{browser_url}/json/version",
-                        headers={"Host": f"localhost:{port}"},  # Bypass Chrome security check
-                        timeout=5.0
-                    )
-                    if resp.status_code != 200:
-                        raise Exception(f"DevTools returned HTTP {resp.status_code}")
+            for h in target_hosts:
+                browser_url = f"http://{h}:{port}"
+                try:
+                    print(f"📡 [{attempt}/{retries}] Probing DevTools at {browser_url}/json/version...")
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(
+                            f"{browser_url}/json/version",
+                            headers={"Host": f"localhost:{port}"},
+                            timeout=5.0
+                        )
+                        if resp.status_code != 200:
+                            raise Exception(f"DevTools returned HTTP {resp.status_code}")
 
-                    info = resp.json()
-                    ws_url = info.get("webSocketDebuggerUrl")
-                    if not ws_url:
-                        raise Exception("No webSocketDebuggerUrl in response — Chrome may be in use by another debugger")
+                        info = resp.json()
+                        ws_url = info.get("webSocketDebuggerUrl")
+                        if not ws_url:
+                            raise Exception("No webSocketDebuggerUrl in response — Chrome may be in use by another debugger")
 
-                    # Rewrite localhost → docker host bridge
-                    ws_url = ws_url.replace("localhost", host).replace("127.0.0.1", host)
+                        ws_url = ws_url.replace("localhost", h).replace("127.0.0.1", h)
 
-                print(f"🔗 Connecting via WebSocket: {ws_url}...")
-                browser = await pw.chromium.connect_over_cdp(ws_url, timeout=10000)
+                    print(f"🔗 Connecting via WebSocket: {ws_url}...")
+                    browser = await pw.chromium.connect_over_cdp(ws_url, timeout=10000)
 
-                context = browser.contexts[0] if browser.contexts else await browser.new_context()
-                return context, pw, browser
+                    context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                    return context, pw, browser
 
-            except Exception as e:
-                last_error = e
-                print(f"⚠️ Attempt {attempt} failed: {e}")
-                await pw.stop()
-                if attempt < retries:
-                    print(f"   Retrying in 2s...")
-                    await asyncio.sleep(2)
+                except Exception as e:
+                    last_error = e
+                    print(f"⚠️ Attempt {attempt} ({h}) failed: {e}")
+            
+            await pw.stop()
+            if attempt < retries:
+                print(f"   Retrying all host vectors in 2s...")
+                await asyncio.sleep(2)
 
         print(f"❌ CDP Connection failed after {retries} attempts: {last_error}")
         raise Exception(

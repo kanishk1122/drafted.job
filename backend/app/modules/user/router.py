@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.user.schema import UserCreate, UserLogin, UserUpdate
 from app.modules.user.service import user_service
+from app.core.dependencies import get_current_user
+from app.modules.user.model import UserContext
 
 router = APIRouter()
 
@@ -10,19 +12,19 @@ router = APIRouter()
 def get_me(
     db: Session = Depends(get_db), 
     access_token: str = Cookie(None),
-    authorization: str = Header(None)
+    current_user: UserContext = Depends(get_current_user)
 ):
     """
     Verify session via Cookie or Authorization header (fallback for Electron).
     """
-    token = access_token
-    if not token and authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
+    # token = access_token
+    # if not token and authorization and authorization.startswith("Bearer "):
+    #     token = authorization.split(" ")[1]
 
-    if not token:
-        raise HTTPException(status_code=401, detail="No session authority found.")
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="No session authority found.")
         
-    return user_service.get_me(db, token)
+    return current_user
 
 @router.post("/register")
 def register(user_in: UserCreate, response: Response, db: Session = Depends(get_db)):

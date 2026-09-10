@@ -28,7 +28,7 @@ class JobService:
         return job
 
     def save_scouted_job(self, db: Session, user_id: int, data: dict):
-        """Clinical entry point for AI scout missions."""
+        """Clinical entry point for AI scout missions. Vectorizes job description and scores vs resume."""
         job = JobRepository(
             user_id=user_id,
             title=data.get("title"),
@@ -51,6 +51,60 @@ class JobService:
         # INDUSTRIAL INVALIDATION
         self._clear_user_caches(user_id)
         return job
+
+    async def save_scouted_job_with_vectors(self, db: Session, user_id: int, data: dict, resume_embedding: Optional[list] = None) -> dict:
+        """
+        Async version of save_scouted_job that:
+        1. Generates a semantic embedding for the job description.
+        2. Computes cosine similarity vs the user's resume embedding.
+        3. Stores both embedding and vector_score in the DB.
+        Returns the saved job + vector_score.
+        """
+        from app.core.embedding import generate_embedding, cosine_similarity
+
+        # Generate job embedding from title + description for richer semantic context
+        job_text = f"{data.get('title', '')} {data.get('description', '')}"
+        job_embedding = await generate_embedding(job_text)
+
+        # Compute vector similarity vs resume (0.0 - 1.0 → scale to 0-100)
+        vector_score = 0
+        if resume_embedding and job_embedding:
+            sim = cosine_similarity(resume_embedding, job_embedding)
+            vector_score = int(round(sim * 100))
+
+        # Blend vector score with heuristic LLM score for final score
+        llm_score = data.get("heuristic_score", 0) or 0
+        if vector_score > 0 and llm_score > 0:
+            final_score = int(round((vector_score * 0.4) + (llm_score * 0.6)))
+        elif vector_score > 0:
+            final_score = vector_score
+        else:
+            final_score = llm_score
+
+        job = JobRepository(
+            user_id=user_id,
+            title=data.get("title"),
+            company=data.get("company"),
+            location=data.get("location"),
+            url=data.get("url"),
+            platform=data.get("platform"),
+            description=data.get("description"),
+            salary=data.get("salary"),
+            currency=data.get("currency"),
+            tech_stack=data.get("tech_stack"),
+            heuristic_score=final_score,
+            match_reason=data.get("match_reason"),
+            embedding=job_embedding,
+            vector_score=vector_score,
+            status=JobStatus.NEW
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        self._clear_user_caches(user_id)
+        return {"job": job, "vector_score": vector_score, "final_score": final_score}
+
         
     @cached(expire_seconds=900, key_prefix="jobs_list")
     def list_jobs(self, db: Session, user_id: int, status: Optional[JobStatus] = None, platform: Optional[str] = None, min_score: Optional[int] = 0, q: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, sort_by: str = "newest", limit: int = 50, offset: int = 0):

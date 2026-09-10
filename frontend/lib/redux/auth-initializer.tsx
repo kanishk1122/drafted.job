@@ -21,6 +21,7 @@ export function AuthInitializer({ children }: { children: React.ReactNode }) {
         try {
           const userData = await authService.getMe();
           dispatch(loginSuccess({
+            id: userData.id,
             full_name: userData.full_name,
             email: userData.email,
           }));

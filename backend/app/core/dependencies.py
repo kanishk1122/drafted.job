@@ -13,10 +13,12 @@ def get_current_user(
 ) -> UserContext:
     # Manual token detection for Electron support
     token = access_token
+    print(f"Auth check: Cookies: access_token={access_token}, Header: auth={authorization}")
     if not token and authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
 
     if not token:
+        print(f"Auth failed: No token. Cookies: access_token={access_token}, Header: auth={authorization}")
         raise HTTPException(status_code=401, detail="No session authority found.")
     
     try:
@@ -24,7 +26,8 @@ def get_current_user(
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Could not validate credentials.")
-    except JWTError:
+    except JWTError as e:
+        print(f"Auth failed: JWT error: {e}")
         raise HTTPException(status_code=401, detail="Session expired or invalid.")
         
     user = db.query(UserContext).filter(UserContext.email == email).first()

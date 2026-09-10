@@ -67,6 +67,10 @@ async def upload_resume(
     # Call AI Service to parse structured data
     data = await ai_service.parse_resume(raw_text)
 
+    # Generate semantic embedding for the resume text
+    from app.core.embedding import generate_embedding
+    resume_embedding = await generate_embedding(raw_text)
+
     # Save to Database with individual columns
     db_resume = Resume(
         user_id=user_id,
@@ -80,7 +84,8 @@ async def upload_resume(
         summary=data.get("summary"),
         skills=json.dumps(data.get("skills", [])),
         experience=json.dumps(data.get("experience", [])),
-        education=json.dumps(data.get("education", []))
+        education=json.dumps(data.get("education", [])),
+        embedding=resume_embedding
     )
     db.add(db_resume)
     db.commit()
@@ -113,7 +118,8 @@ async def upload_resume(
         "filename": db_resume.filename,
         "full_name": db_resume.full_name,
         "skills": data.get("skills"),
-        "professional_data": data
+        "professional_data": data,
+        "vector_ready": resume_embedding is not None and len(resume_embedding) > 0
     }
 
 @router.get("/my/{user_id}")

@@ -28,7 +28,7 @@ class AIService:
 
         try:
             completion = await self.client.chat.completions.create(
-                model=self.model,
+                model=settings.LIGHT_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 max_tokens=1024,
@@ -63,7 +63,7 @@ class AIService:
 
         try:
             completion = await self.client.chat.completions.create(
-                model=self.model,
+                model=settings.LIGHT_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 max_tokens=64,
@@ -95,7 +95,7 @@ class AIService:
 
         try:
             completion = await self.client.chat.completions.create(
-                model=self.model,
+                model=settings.HEAVY_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2048,
@@ -119,14 +119,48 @@ class AIService:
             return self._mock_resume_parsing(resume_text)
 
     def _mock_resume_parsing(self, text: str):
+        import re
+        
+        email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+        email = email_match.group(0) if email_match else ""
+
+        phone_match = re.search(r'(\+?\d{1,4}[\s\.-]?)?\(?\d{2,5}\)?[\s\.-]?\d{3,5}[\s\.-]?\d{3,5}', text)
+        phone = phone_match.group(0).strip() if phone_match else ""
+
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        full_name = lines[0] if lines else "Applicant Name"
+        if len(full_name) > 40 or "@" in full_name:
+            full_name = "Applicant Name"
+
+        # Common Tech Skills Extractor
+        common_skills = [
+            "Python", "Node.js", "Express.js", "FastAPI", "React.js", "Next.js", "TypeScript",
+            "JavaScript", "Tailwind CSS", "Redux", "Three.js", "GSAP", "PostgreSQL", "MongoDB",
+            "Redis", "ChromaDB", "Docker", "AWS", "Vercel", "Git", "GitHub", "CI/CD", "REST APIs",
+            "GraphQL", "Kafka", "Socket.IO", "Razorpay", "Electron", "LangChain", "Gemini",
+            "RAG Pipelines", "NVIDIA NIM", "Generative AI", "Puppeteer", "BeautifulSoup"
+        ]
+        text_lower = text.lower()
+        extracted_skills = [s for s in common_skills if s.lower() in text_lower]
+        if not extracted_skills:
+            extracted_skills = ["Software Engineering"]
+
+        # Basic summary extraction
+        summary = ""
+        summary_match = re.search(r'SUMMARY\s*[\n\r]+(.*?)(?=EXPERIENCE|PROJECTS|SKILLS|EDUCATION|$)', text, re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            summary = summary_match.group(1).strip()
+        else:
+            summary = lines[1] if len(lines) > 1 else ""
+
         return {
-            "full_name": "Applicant Name",
-            "email": "applicant@example.com",
-            "phone": "000-000-0000",
-            "location": "Global",
-            "summary": "AI extracted summary placeholder",
-            "total_years_of_experience": 0.0,
-            "skills": ["Python", "General Software Engineering"],
+            "full_name": full_name,
+            "email": email or "applicant@example.com",
+            "phone": phone or "",
+            "location": "Remote / Global",
+            "summary": summary or "Full Stack Developer experienced in modern web platforms and AI integration.",
+            "total_years_of_experience": 2.0,
+            "skills": extracted_skills,
             "experience": [],
             "education": []
         }

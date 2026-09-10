@@ -115,11 +115,13 @@ PLATFORM_SEARCH_CONFIG = {
             f"https://www.google.com/search?q={urllib.parse.quote_plus(q)}+jobs+in+{urllib.parse.quote_plus(loc)}"
             f"&ibp=htl;jobs"
         ),
-        "job_card_selectors": ["li.gdEP7b", "div.iS779e", "div[role='treeitem']"],
-        "wait_selector": "li.gdEP7b, div.iS779e, div[role='treeitem']",
-        "title_selector": "div.BjS79b, div.vNEEBe, .vNEEBe",
-        "company_selector": "div.vNHEBe, div.vNHEBe",
-        "location_selector": "div.QY9Zdb, .QY9Zdb",
+        "job_card_selectors": [
+            "div[role='treeitem']", "li.gdEP7b", "div.iS779e", "li.P4g25e", "div.zxw6eb", "div.v7W49e", "div.J1W9bd", "div.BLeRjf", "div.vNEEBe"
+        ],
+        "wait_selector": "div[role='treeitem'], li.gdEP7b, div.iS779e, div.zxw6eb, div.v7W49e, h3",
+        "title_selector": "div.BjS79b, div.vNEEBe, .vNEEBe, h3, div.heading",
+        "company_selector": "div.vNHEBe, .vNHEBe, div.n54ktd, div.subtext",
+        "location_selector": "div.QY9Zdb, .QY9Zdb, div.tL2Wfd",
     },
 }
 
@@ -260,16 +262,29 @@ class JobScoutService:
             await card.click(force=True)
             
             # LinkedIn and Foundit JD side-panels
-            panel_selectors = ".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container, #jobDescriptionText"
-            await page.wait_for_selector(panel_selectors, timeout=timeout)
+            panel_selectors = ".jobs-description__content, .jobs-box__html-content, #jdSection, .jobDescriptionNew, .job-view-layout, .job-details-jobs-unified-top-card__primary-description-container, #jobDescriptionText, .yS4Xce, .vL0S7c, .WpHeLc"
+            
+            # Try to wait for a panel selector — but don't crash if none found
+            try:
+                await page.wait_for_selector(panel_selectors, timeout=timeout)
+            except Exception:
+                pass  # Fallback path will handle if panel never appears
             
             # HYDRATION PULSE: Wait until the loading placeholder is replaced by actual career data
-            await page.wait_for_function(f"""(sel) => {{
-                const el = document.querySelector(sel);
-                return el && el.innerText.length > 50 && !el.innerText.includes('NEURAL_HYDRATION_ACTIVE');
-            }}""", panel_selectors, timeout=timeout)
+            # FIX: Playwright Python API requires `arg` as keyword argument, not positional
+            try:
+                await page.wait_for_function(
+                    """(sel) => {
+                        const el = document.querySelector(sel);
+                        return el && el.innerText.length > 50 && !el.innerText.includes('NEURAL_HYDRATION_ACTIVE');
+                    }""",
+                    arg=panel_selectors,
+                    timeout=timeout
+                )
+            except Exception:
+                pass  # Continue even if hydration check times out
             
-            await asyncio.sleep(0.5) # Final stability grace period
+            await asyncio.sleep(0.8)  # Final stability grace period
             
             intel = await page.evaluate("""() => {
                 // 1. Description Drill (Multi-Platform Signature Ingest)
@@ -292,7 +307,6 @@ class JobScoutService:
                 let enrichedLocation = '';
                 if (metaContainer) {
                     const textNodes = Array.from(metaContainer.querySelectorAll('span')).map(s => s.innerText.trim());
-                    // Find first non-empty, non-relative-time node
                     enrichedLocation = textNodes.find(t => t.length > 2 && !t.includes('ago') && !t.includes('apply')) || '';
                 }
 
@@ -301,17 +315,33 @@ class JobScoutService:
                 let workType = '';
                 preferences.forEach(p => {
                     const t = p.innerText.toUpperCase();
-                    if (t.includes('REMOTE') || t.includes('ON-SITE') || t.includes('HYBRID')) {
-                        workType = t;
-                    }
+                    if (t.includes('REMOTE') || t.includes('ON-SITE') || t.includes('HYBRID')) workType = t;
                 });
 
                 return { description, location: enrichedLocation, workType };
             }""")
             
+            # FALLBACK: If panel selector returned empty, scrape visible page text
+            if not intel.get('description') or len(intel.get('description', '')) < 80:
+                try:
+                    page_text = await page.evaluate(
+                        """() => {
+                            // Remove nav, header, footer noise before extracting
+                            ['header','nav','footer','.global-nav','#header'].forEach(s => {
+                                document.querySelectorAll(s).forEach(el => el.remove());
+                            });
+                            return document.body ? document.body.innerText.substring(0, 12000) : '';
+                        }"""
+                    )
+                    if page_text and len(page_text) > 100:
+                        intel['description'] = page_text
+                except Exception:
+                    pass
+            
             return intel
         except Exception as e:
             print(f"⚠️ Detail panel ingest failed: {e}")
+            # Last resort: return empty so upstream fallback kicks in
             return {"description": "", "location": "", "workType": ""}
 
     async def _close_common_popups(self, page):
@@ -496,54 +526,52 @@ class JobScoutService:
             return _get_keyword_score()
 
         prompt = f"""
-        [STRICT RECRUITMENT ANALYSIS - OUTPUT ONLY RAW JSON - NO MARKDOWN - NO CODE]
+        [RECRUITMENT MATCH EVALUATION - OUTPUT ONLY RAW JSON]
         
-        Analyze the match between this Candidate and Job Lead.
-        
-        CANDIDATE PROFILE:
-        - Target Role: {target_role}
-        - Experience: {experience[:1000]}
-        - Skills: {user_skills}
-        - Total Experience: {years_of_exp} years.
-        
-        MISSION SPECIFICATIONS:
-        - Job Title: {job_title}
-        - Job Description: {job_description[:15000]}
+        Evaluate candidate fit for this job lead.
 
-        MISSION GUIDELINES:
-        - BE SKEPTICAL BUT PRAGMATIC: Only award a 100% score if the candidate's core stack matches the job's core requirements perfectly.
-        - ROLE PARITY: Consider 'Web Developer' and 'Full Stack Developer' synonymous (100% match) if the tech stack (e.g., Python/Node/React) aligns with the candidate's arsenal.
-        - PENALIZE HARD GAPS: If a specific required technology (e.g. AWS, Kubernetes) is missing from the profile, THE SCORE CANNOT BE 100%.
-        
-        MATCH INVARIANTS:
-        1. SENIORITY: If the candidate has 0-1 years of experience and the job requires 1-2 years, this IS a match (100%) as long as the tech stack is perfect. Junior transitions (0 -> 1-2) are considered parity.
-        2. HARD SENIORITY: If the job requires > {years_of_exp} years of experience, score MUST be capped at 30%.
-        3. UNSUPPORTED STACK: If the job requires specific languages NOT in the candidate's stack (e.g. Java when candidate is Python/Node only), score MUST be capped at 50%.
-        4. 100% REQUIREMENT: Flawless alignment of core stack and role intent receives 100%.
-        
-        OUTPUT PROTOCOL:
-        - Return ONLY a raw JSON object string.
-        - DO NOT wrap in backticks (```json).
-        - DO NOT return a javascript function or any code.
-        - DO NOT include conversation or notes.
-        
+        CANDIDATE:
+        - Target Role: {target_role}
+        - Experience History: {experience[:1000]}
+        - Tech Arsenal & Skills: {user_skills}
+        - Years of Experience: {years_of_exp} years
+
+        JOB LEAD:
+        - Title: {job_title}
+        - Full Description: {job_description[:15000]}
+
+        EVALUATION RULES:
+        1. CORE STACK ALIGNMENT: 
+           - If candidate has core technologies requested by job (e.g. MERN stack candidate applying for MERN / React / Node / Full Stack role), score 85-100%.
+           - Additional skills in candidate arsenal (e.g. Python, Docker, FastAPI) are BONUSES that increase candidate value. NEVER penalize extra skills!
+        2. ROLE PARITY: 
+           - "Full Stack Developer", "MERN Stack Developer", "Software Engineer", "Web Developer", "Backend Developer" are closely related. If tech stack matches, score 80-100%.
+        3. SENIORITY FLEXIBILITY:
+           - 0-2 years required for a candidate with 1-2 years experience is a 100% MATCH.
+           - Only penalize if job requires > 4+ years senior/lead experience for a junior/mid candidate.
+        4. MISMATCH DEFINITION:
+           - Only penalize heavily (<40%) if core tech stack is fundamentally incompatible (e.g., pure Java/C++ role for a Web/Node candidate).
+        5. PROFESSIONAL EVALUATION REASON:
+           - Provide a concise, constructive 2-sentence summary highlighting stack match and strengths.
+
+        OUTPUT FORMAT (RAW JSON ONLY):
         {{
-          "score": 0-100, 
-          "reason": "Clear explanation", 
-          "skip": true/false,
-          "salary": "Range",
-          "currency": "INR/USD",
-          "tech_stack": ["tech found"]
+          "score": 0-100,
+          "reason": "Constructive 1-2 sentence match summary.",
+          "skip": false,
+          "salary": "Extracted range or Not specified",
+          "currency": "INR/USD/N/A",
+          "tech_stack": ["Extracted technologies"]
         }}
         """
         try:
-            # 12s timeout: Fast-fail if NVIDIA/AI signal is sluggish
+            # 25s timeout: heavy model needs more time; short JD = fast, long JD = slower
             completion = await self.nim_client.chat.completions.create(
-                model=settings.MODEL_NAME,
+                model=settings.HEAVY_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1024,
-                timeout=12.0
+                max_tokens=512,
+                timeout=25.0
             )
             
             response_text = completion.choices[0].message.content
@@ -635,7 +663,7 @@ class JobScoutService:
         """
         try:
             completion = await self.nim_client.chat.completions.create(
-                model=settings.MODEL_NAME,
+                model=settings.LIGHT_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 response_format={"type": "json_object"}
@@ -646,35 +674,61 @@ class JobScoutService:
 
     async def _refine_search_directive(self, intent: dict, platform: str = "generic") -> str:
         """Use structured AI intent to create a platform-optimized search string."""
-        if not self.nim_client:
-            return f"{intent.get('role', '')} {intent.get('skills', '')}"[:40]
-
-        prompt = f"""
-        [JOB SEARCH QUERY OPTIMIZATION - TARGET: {platform.upper()}]
-        Create a surgical search query optimized for {platform.upper()} based on this INTENT.
+        role = intent.get("primary_role", intent.get("role", ""))
+        tech = intent.get("tech_stack", [])
+        tech_str = ", ".join(tech[:4]) if tech else ""
         
-        INTENT: {json.dumps(intent)}
+        # Safe fallback — always available even if AI fails
+        safe_fallback = f"{role} {tech_str}".strip()[:80]
+        
+        if not self.nim_client:
+            return safe_fallback
 
-        PLATFORM SPECIFICATIONS:
-        - LinkedIn/Indeed: MUST use strict Boolean grouping. (Role1 OR Role2) AND (Tech1 OR Tech2).
-        - Naukri/Foundit: Space-separated keywords or simple comma clusters.
-        - Google: Phrase-wrapped titles with core skills.
+        platform_hint = {
+            "linkedin": "Boolean: (RoleA OR RoleB) AND (Tech1 OR Tech2)",
+            "indeed":   "Boolean: (RoleA OR RoleB) AND (Tech1 OR Tech2)",
+            "glassdoor":"Boolean: (RoleA OR RoleB) AND (Tech1 OR Tech2)",
+            "naukri":   "Space-separated keywords only",
+            "foundit":  "Space-separated keywords only",
+            "google":   "Quoted role title followed by top 2-3 skills"
+        }.get(platform.lower(), "Space-separated keywords")
 
-        GUIDELINES:
-        - Include NO location or seniority terms unless explicitly part of the role title.
-        - Focus on discovering as many relevant roles as possible.
-        - Return ONLY the optimized search string.
-        """
+        prompt = f"""You are a job search query generator. Output ONLY the raw search string — no labels, no markdown, no backticks, no explanation.
+
+Platform: {platform.upper()} — Format: {platform_hint}
+Role: {role}
+Must-have tech: {tech_str}
+
+Rules:
+- Output ONLY the search string itself
+- No prefixes like "Query:" or "Search:" or "**" or backticks
+- Max 80 characters
+
+Raw search string:"""
         try:
             completion = await self.nim_client.chat.completions.create(
-                model=settings.MODEL_NAME,
+                model=settings.LIGHT_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
-                max_tokens=64
+                max_tokens=40
             )
-            return completion.choices[0].message.content.strip().replace('"', '')
-        except:
-            return f"{intent.get('primary_role', '')} {', '.join(intent.get('tech_stack', []))}"
+            raw = completion.choices[0].message.content.strip()
+            
+            # Strip markdown artifacts the model might still produce
+            import re
+            # Remove **bold**, *italic*, `code`, and common label prefixes
+            raw = re.sub(r'\*+', '', raw)
+            raw = re.sub(r'`+', '', raw)
+            raw = re.sub(r'^(Query|Search|String|Result|Output|Optimized)[:\s\-]+', '', raw, flags=re.IGNORECASE)
+            raw = raw.strip().strip('"').strip("'").strip()
+            
+            # If output is still suspicious (too long, contains colons at start, empty), use fallback
+            if not raw or len(raw) > 120 or raw.startswith(':'):
+                return safe_fallback
+                
+            return raw
+        except Exception:
+            return safe_fallback
 
     async def _ai_scan_for_career_links(self, page) -> list:
         """Use AI to identify high-value career portal links from the search result matrix."""
@@ -713,7 +767,7 @@ class JobScoutService:
             - Cap results at top 6.
             """
             completion = await self.nim_client.chat.completions.create(
-                model=settings.MODEL_NAME,
+                model=settings.LIGHT_MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=512,
@@ -806,14 +860,39 @@ class JobScoutService:
         })
 
         context = pw = browser = None
+        # Industrial Pulse: Load existing telemetry for resumed missions
+        total_saved_count = scout_session.total_jobs or 0
+        mission_breakdown = list(scout_session.breakdown or [])
+        
+        # VECTOR INTELLIGENCE: Load user's resume embedding for semantic job matching
+        resume_embedding = None
+        try:
+            from app.modules.resume.model import Resume as ResumeModel
+            user_resume = db.query(ResumeModel).filter(
+                ResumeModel.user_id == user_id
+            ).order_by(ResumeModel.created_at.desc()).first()
+            
+            if user_resume and user_resume.embedding is not None:
+                resume_embedding = list(user_resume.embedding)
+                yield json.dumps({"type": "thinking", "message": "🧬 Resume Vector: LOADED — Semantic matching ENABLED"})
+            else:
+                # Generate embedding from raw_text on-the-fly if no stored vector
+                if user_resume and user_resume.raw_text:
+                    from app.core.embedding import generate_embedding
+                    resume_embedding = await generate_embedding(user_resume.raw_text)
+                    # Persist for future missions
+                    user_resume.embedding = resume_embedding
+                    db.commit()
+                    yield json.dumps({"type": "thinking", "message": "🧬 Resume Vector: GENERATED on-the-fly — Semantic matching ENABLED"})
+                else:
+                    yield json.dumps({"type": "thinking", "message": "⚠️ No resume found — Falling back to keyword scoring only"})
+        except Exception as emb_err:
+            yield json.dumps({"type": "thinking", "message": f"⚠️ Vector load failed: {emb_err} — Keyword scoring active"})
+        
         try:
             yield json.dumps({"type": "thinking", "message": "🔗 Connecting to local Chrome..."})
             context, pw, browser = await browser_service.connect_to_local_chrome()
             page = await context.new_page()
-
-            # Industrial Pulse: Load existing telemetry for resumed missions
-            total_saved_count = scout_session.total_jobs or 0
-            mission_breakdown = list(scout_session.breakdown or [])
             
             # Map existing breakdown for easier in-loop updating
             platform_map = { b["platform"].lower(): i for i, b in enumerate(mission_breakdown) }
@@ -903,14 +982,17 @@ class JobScoutService:
                     except: pass
 
                 yield json.dumps({"type": "thinking", "message": f"📜 Scrolling {target_platform.upper()} matrix..."})
-                # On LinkedIn, we must scroll the internal list container, not the window
-                if target_platform == "linkedin":
+                # On LinkedIn and Google Jobs, scroll the internal list container
+                if target_platform in ("linkedin", "google"):
                     await page.evaluate("""() => {
-                        const list = document.querySelector('.jobs-search-results-list, .scaffold-layout__list, ul.CERBSFoMEkNxNKfBpiWHVfzfLOkzUc');
+                        const list = document.querySelector(
+                            '.jobs-search-results-list, .scaffold-layout__list, ul.CERBSFoMEkNxNKfBpiWHVfzfLOkzUc, ' +
+                            '.zxw6eb, .Yj7flb, .BLeRjf, ul.P4g25e, div[role="tree"], .gws-plugins-horizon-jobs__JobList'
+                        );
                         if (list) {
-                            for (let i=0; i<5; i++) {
+                            for (let i = 0; i < 5; i++) {
                                 setTimeout(() => {
-                                    list.scrollBy({ top: 1200, behavior: 'smooth' });
+                                    list.scrollBy({ top: 1000, behavior: 'smooth' });
                                 }, i * 1500);
                             }
                         }
@@ -928,23 +1010,29 @@ class JobScoutService:
                 for sel in config.get("job_card_selectors", []):
                     # Robust harvester: Look for LinkedIn ID, Generic ID, Indeed JK, or Foundit ID
                     harvest_script = """(sel) => {
-                        return Array.from(document.querySelectorAll(sel)).map(el => {
-                            // Direct ID matches
+                        return Array.from(document.querySelectorAll(sel)).map((el, idx) => {
                             const direct = el.getAttribute('data-occludable-job-id') || 
                                          el.getAttribute('data-job-id') || 
                                          el.getAttribute('data-jk') ||
-                                         (el.id && el.id.length > 5 ? el.id : null);
+                                         el.getAttribute('data-docid') ||
+                                         el.getAttribute('data-encoded-doc-id') ||
+                                         (el.id && el.id.length > 3 ? el.id : null);
                             if (direct) return String(direct);
                             
-                            // Indeed specific: search for jcs-JobTitle link inside
-                            const link = el.querySelector('a.jcs-JobTitle, a[data-jk], a.title');
+                            const link = el.querySelector('a.jcs-JobTitle, a[data-jk], a.title, a[href*="jobs"]');
                             if (link) {
-                                return link.getAttribute('data-jk') || 
-                                       link.getAttribute('data-job-id') || 
-                                       link.innerText.trim(); // Fallback to title-based ID if needed
+                                const linkId = link.getAttribute('data-jk') || link.getAttribute('data-job-id') || link.getAttribute('data-docid');
+                                if (linkId) return String(linkId);
                             }
-                            
-                            return null;
+
+                            let scoutId = el.getAttribute('data-scout-id');
+                            if (!scoutId) {
+                                const titleEl = el.querySelector('div.BjS79b, div.vNEEBe, .vNEEBe, h3, a.title, a');
+                                const textKey = titleEl ? titleEl.innerText.trim().replace(/[^a-zA-Z0-9]/g, '_').substring(0, 25) : ('card_' + idx);
+                                scoutId = 'scout_id_' + idx + '_' + textKey;
+                                el.setAttribute('data-scout-id', scoutId);
+                            }
+                            return scoutId;
                         }).filter(id => !!id);
                     }"""
                     ids = await page.evaluate(harvest_script, sel)
@@ -1069,12 +1157,12 @@ class JobScoutService:
                         
                         try:
                             # 2. Re-find card by ID inside the loop (Resilience)
-                            id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], .job_{job_id}"
+                            id_selector = f"[data-occludable-job-id='{job_id}'], [data-job-id='{job_id}'], [data-jk='{job_id}'], [data-docid='{job_id}'], [data-scout-id='{job_id}'], #{job_id}, .job_{job_id}"
                             card = await page.query_selector(id_selector)
                             
                             if not card:
                                 # INDUSTRIAL FALLBACK: If exact ID selector fails, try partial match
-                                partial_selector = f"[data-occludable-job-id*='{job_id}'], [data-job-id*='{job_id}'], [data-jk*='{job_id}'], [id*='{job_id}'], [href*='{job_id}']"
+                                partial_selector = f"[data-occludable-job-id*='{job_id}'], [data-job-id*='{job_id}'], [data-jk*='{job_id}'], [data-scout-id*='{job_id}'], [id*='{job_id}'], [href*='{job_id}']"
                                 card = await page.query_selector(partial_selector)
                             
                             if not card:
@@ -1108,8 +1196,8 @@ class JobScoutService:
 
                             title, company, loc, link, extracted_id = data.get("title"), data.get("company"), data.get("location"), data.get("href"), data.get("jobId")
                             
-                            # TACTICAL: Allow missing links for SPA platforms (Foundit)
-                            if not title or (not link and target_platform != "foundit"):
+                            # TACTICAL: Allow missing links for SPA platforms (Foundit, Google)
+                            if not title or (not link and target_platform not in ["foundit", "google"]):
                                 yield json.dumps({"type": "thinking", "message": f"⏭️ Skipping card {i+1}: Extraction incomplete (Hydration timeout)"})
                                 continue
 
@@ -1123,6 +1211,8 @@ class JobScoutService:
                             elif target_platform == "foundit":
                                 if job_id and (not link or link.startswith("/")): link = f"https://www.foundit.in/job-details/{job_id}"
                                 elif link.startswith("/"): link = "https://www.foundit.in" + link
+                            elif target_platform == "google":
+                                if not link: link = f"https://www.google.com/search?q=jobs#google_scout_{job_id or i}"
                             
                             yield json.dumps({"type": "thinking", "message": f"👆 [P{current_page}-{i+1}] Processing '{title}' @ {company}..."})
                             
@@ -1148,15 +1238,15 @@ class JobScoutService:
                                 yield json.dumps({"type": "thinking", "message": f"🔍 Accessing full JD on {target_platform.upper()}..."})
                                 raw_job_desc = await self._get_job_detail_via_popup(context, page, card, target_platform)
                             
-                            # Fallback for empty/failed panel or popup
-                            if not raw_job_desc:
-                                raw_job_desc = data.get("description") or f"{title} at {company} in {loc}"
+                            # Fallback chain: card snippet → title+company (never empty)
+                            if not raw_job_desc or len(raw_job_desc) < 80:
+                                raw_job_desc = data.get("description") or ""
+                            if not raw_job_desc or len(raw_job_desc) < 80:
+                                raw_job_desc = f"{title} at {company} in {loc}"
                             
-                            # Enrich with extracted tags if available
+                            # Enrich with extracted skill tags from card
                             tags = data.get("tags")
-                            job_desc = f"{raw_job_desc} \n\n TECHNICAL TAGS: {tags}" if tags else raw_job_desc
-                            
-                            print(f"DEBUG: Extracted JD for AI Analysis (Len: {len(job_desc)}): |{job_desc[:150]}...|")
+                            job_desc = f"{raw_job_desc}\n\nTECHNICAL TAGS: {tags}" if tags else raw_job_desc
                             
                             if not job_desc: job_desc = f"{title} at {company} in {loc}"
                             
@@ -1193,9 +1283,9 @@ class JobScoutService:
                             yield json.dumps({"type": "thinking", "message": f"📊 AI Insight: {reason} (Match: {score}%)"})
 
                             
-                            if score < 100:
+                            if score < 70:
                                 consecutive_skips += 1
-                                yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match - 100% required)"})
+                                yield json.dumps({"type": "thinking", "message": f"⏭️  Decision: Skipping ({score}% match - 70% required)"})
                                 yield json.dumps({"type": "job_skipped", "data": {"title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
                                 
                                 if consecutive_skips >= 20:
@@ -1208,7 +1298,7 @@ class JobScoutService:
                             consecutive_skips = 0
 
 
-                            job = job_service.save_scouted_job(db, user_id, {
+                            result = await job_service.save_scouted_job_with_vectors(db, user_id, {
                                 "title": title, 
                                 "company": company, 
                                 "location": loc, 
@@ -1220,7 +1310,10 @@ class JobScoutService:
                                 "tech_stack": extracted_tech, 
                                 "heuristic_score": score, 
                                 "match_reason": reason
-                            })
+                            }, resume_embedding=resume_embedding)
+                            job = result["job"]
+                            final_score = result["final_score"]
+                            vector_score = result["vector_score"]
                             
                             await self._clear_visual_pulse(card)
                             # LIVE TELEMETRY: Sync mission breakdown and total count to vault
@@ -1232,7 +1325,7 @@ class JobScoutService:
                             scout_session.breakdown = mission_breakdown
                             db.commit()
 
-                            yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": score, "reason": reason, "platform": target_platform}})
+                            yield json.dumps({"type": "job_found", "data": {"id": job.id, "title": title, "company": company, "location": loc, "url": link, "score": final_score, "vector_score": vector_score, "reason": reason, "platform": target_platform}})
 
                         except Exception as e:
                             yield json.dumps({"type": "thinking", "message": f"⚠️ Card error: {e}"}); continue
@@ -1305,7 +1398,13 @@ class JobScoutService:
             except Exception as commit_err:
                 print(f"Failed to commit final session stats: {commit_err}")
 
-            if browser: await browser.close()
-            if pw: await pw.stop()
+            try:
+                if browser: await browser.close()
+            except Exception:
+                pass
+            try:
+                if pw: await pw.stop()
+            except Exception:
+                pass
 
 job_scout_service = JobScoutService()

@@ -128,26 +128,27 @@ ipcMain.handle('open-external-browser', async (event, url) => {
 ipcMain.handle('set-auth-cookie', async (event, { name, value, expirationDate }) => {
   const { session } = require('electron');
   
-  // We set it for the backend URL so it gets sent with API requests
-  const backendUrl = 'http://127.0.0.1:5000';
-  
-  const cookie = {
-    url: backendUrl,
+  const expiryTs = expirationDate || (Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 30));
+
+  // Base cookie — NO secure:true because backend is http://, not https://
+  // sameSite:'lax' works without secure; 'no_restriction' requires secure:true
+  const baseCookie = {
     name: name,
     value: value,
-    domain: 'localhost',
     path: '/',
-    expirationDate: expirationDate || (Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 30)),
-    sameSite: 'no_restriction',
-    secure: true, // REQUIRED for sameSite: 'no_restriction'
-    httpOnly: true // Allow overwriting backend-set HttpOnly cookies
+    expirationDate: expiryTs,
+    sameSite: 'lax',
+    secure: false,
+    httpOnly: false // Must be false so JS can read it for the Bearer header fallback
   };
 
   try {
-    // Set for backend
-    await session.defaultSession.cookies.set(cookie);
-    // Also set for local mission protocol so frontend can verify it
-    await session.defaultSession.cookies.set({ ...cookie, url: 'app://mission', domain: undefined });
+    // Set for backend (127.0.0.1)
+    await session.defaultSession.cookies.set({ ...baseCookie, url: 'http://127.0.0.1:5000', domain: '127.0.0.1' });
+    // Also set for localhost variant
+    await session.defaultSession.cookies.set({ ...baseCookie, url: 'http://localhost:5000', domain: 'localhost' });
+    // Also set for app:// protocol so AuthInitializer can verify
+    await session.defaultSession.cookies.set({ ...baseCookie, url: 'app://mission', domain: undefined });
     
     console.log(`✅ Cookie Synchronized: ${name}`);
     return { success: true };
@@ -160,10 +161,15 @@ ipcMain.handle('set-auth-cookie', async (event, { name, value, expirationDate })
 ipcMain.handle('get-auth-cookie', async (event, name) => {
   const { session } = require('electron');
   try {
-    // Check both locations
+    // Check 127.0.0.1 first
     const cookies = await session.defaultSession.cookies.get({ url: 'http://127.0.0.1:5000', name });
     if (cookies.length > 0) return cookies[0].value;
+
+    // Fallback: localhost
+    const localhostCookies = await session.defaultSession.cookies.get({ url: 'http://localhost:5000', name });
+    if (localhostCookies.length > 0) return localhostCookies[0].value;
     
+    // Fallback: app:// protocol
     const localCookies = await session.defaultSession.cookies.get({ url: 'app://mission', name });
     return localCookies.length > 0 ? localCookies[0].value : null;
   } catch (error) {

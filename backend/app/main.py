@@ -1,3 +1,12 @@
+import sys
+import asyncio
+
+# MUST be set before any async imports — uvicorn reload=True spawns a child
+# worker that imports this file directly, bypassing run.py. Proactor loop is
+# required for Playwright subprocess_exec on Windows.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -20,6 +29,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "app://mission",
         "app://local"
     ],
